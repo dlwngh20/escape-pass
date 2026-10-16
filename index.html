@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ESCAPE PASS" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>ESCAPE PASS</title>
+</head>
+<body>
+  <div id="ambient"><i></i><i></i><i></i></div>
+
+  <section id="lockScreen" class="lock-screen hidden">
+    <div class="lock-card glass">
+      <div class="brand-mark">E</div>
+      <p class="eyebrow">PRIVATE BOOKING HUB</p>
+      <h1 id="lockTitle">ESCAPE PASS</h1>
+      <p id="lockDesc" class="muted">PIN을 입력해 잠금을 해제하세요.</p>
+      <div id="pinDots" class="pin-dots">
+        <b></b><b></b><b></b><b></b>
+      </div>
+      <input id="pinInput" inputmode="numeric" autocomplete="off" maxlength="8" aria-label="PIN" />
+      <div id="pinPad" class="pin-pad"></div>
+      <button id="useKeyboardBtn" class="text-btn">키보드로 입력</button>
+      <p id="pinError" class="error"></p>
+    </div>
+  </section>
+
+  <div id="app" class="app hidden">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">PRIVATE RESERVATION HUB</p>
+        <h1>ESCAPE PASS</h1>
+      </div>
+      <button id="lockBtn" class="icon-btn" aria-label="잠금">⌁</button>
+    </header>
+
+    <main>
+      <section class="hero glass">
+        <div class="hero-copy">
+          <span class="live-dot"><i></i> iPhone Ready</span>
+          <h2>예약 준비를<br><em>한 곳에서.</em></h2>
+          <p>사이트를 고르면 Safari 예약 페이지로 바로 이동합니다. 설치된 Userscript가 해당 사이트에서 이어서 동작합니다.</p>
+        </div>
+        <div class="hero-orb">⚡</div>
+      </section>
+
+      <section class="stats">
+        <article class="stat glass"><span>예약 사이트</span><strong id="siteCount">7</strong><small>등록됨</small></article>
+        <article class="stat glass"><span>예약 플랜</span><strong id="planCount">0</strong><small>저장됨</small></article>
+        <article class="stat glass"><span>프로필</span><strong id="profileStatus">미설정</strong><small>로컬 저장</small></article>
+      </section>
+
+      <section id="homeView" class="view active">
+        <div class="section-head">
+          <div><p class="eyebrow">QUICK LAUNCH</p><h3>예약 사이트</h3></div>
+          <button id="installHelpBtn" class="chip">홈 화면 설치</button>
+        </div>
+        <div id="siteGrid" class="site-grid"></div>
+
+        <div class="section-head next-head">
+          <div><p class="eyebrow">NEXT PLAN</p><h3>다음 예약</h3></div>
+          <button data-nav="plans" class="text-btn">전체보기</button>
+        </div>
+        <div id="nextPlan"></div>
+      </section>
+
+      <section id="plansView" class="view">
+        <div class="section-head">
+          <div><p class="eyebrow">BOOKING PLAN</p><h3>예약 플랜</h3></div>
+          <button id="addPlanBtn" class="accent-btn small">＋ 새 플랜</button>
+        </div>
+        <div id="planList" class="plan-list"></div>
+      </section>
+
+      <section id="profileView" class="view">
+        <div class="section-head"><div><p class="eyebrow">MY PROFILE</p><h3>예약자 정보</h3></div></div>
+        <form id="profileForm" class="form-card glass">
+          <label>예약자 이름<input id="profileName" autocomplete="name" placeholder="예약자 이름"></label>
+          <label>전화번호<input id="profilePhone" inputmode="tel" autocomplete="tel" placeholder="010-0000-0000"></label>
+          <label>기본 인원
+            <select id="profilePeople">
+              <option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+            </select>
+          </label>
+          <button class="accent-btn" type="submit">프로필 저장</button>
+          <p class="micro">이 정보는 이 기기의 브라우저 저장공간에만 보관됩니다.</p>
+        </form>
+      </section>
+
+      <section id="settingsView" class="view">
+        <div class="section-head"><div><p class="eyebrow">SETTINGS</p><h3>설정</h3></div></div>
+        <div class="settings-list">
+          <button id="changePinBtn" class="setting-row glass"><span><b>앱 잠금 PIN 변경</b><small>이 기기에서 ESCAPE PASS 잠금</small></span><i>›</i></button>
+          <button id="scriptsBtn" class="setting-row glass"><span><b>Userscript 체크</b><small>사이트별 설치 여부를 직접 표시</small></span><i>›</i></button>
+          <button id="exportBtn" class="setting-row glass"><span><b>데이터 백업</b><small>프로필·플랜·설정을 JSON으로 내보내기</small></span><i>›</i></button>
+          <label class="setting-row glass file-row"><span><b>데이터 복원</b><small>ESCAPE PASS 백업 파일 불러오기</small></span><i>＋</i><input id="importInput" type="file" accept="application/json,.json"></label>
+          <button id="resetBtn" class="setting-row glass danger-row"><span><b>이 기기 데이터 초기화</b><small>PIN 포함 모든 로컬 데이터 삭제</small></span><i>×</i></button>
+        </div>
+        <div class="security-note glass">
+          <b>개인용 잠금 안내</b>
+          <p>이 버전은 서버 로그인 없이 이 기기 안에서 PIN으로 잠그는 개인용 앱입니다. 정식 계정 인증/원격 차단이 필요한 경우에는 별도 백엔드 서버가 필요합니다.</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav glass">
+      <button data-nav="home" class="active"><span>⌂</span><small>홈</small></button>
+      <button data-nav="plans"><span>◫</span><small>플랜</small></button>
+      <button data-nav="profile"><span>◎</span><small>프로필</small></button>
+      <button data-nav="settings"><span>⚙</span><small>설정</small></button>
+    </nav>
+  </div>
+
+  <dialog id="planDialog">
+    <form id="planForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">NEW BOOKING</p><h3 id="planDialogTitle">예약 플랜 추가</h3></div><button value="cancel" class="icon-btn">×</button></div>
+      <input id="planId" type="hidden">
+      <label>사이트<select id="planSite"></select></label>
+      <div class="two-col">
+        <label>예약 날짜<input id="planDate" type="date" required></label>
+        <label>시간<input id="planTime" type="time" required></label>
+      </div>
+      <label>지점 / 매장<input id="planBranch" placeholder="예: 홍대점"></label>
+      <label>테마<input id="planTheme" placeholder="테마명"></label>
+      <label>메모<textarea id="planMemo" rows="3" placeholder="오픈시간, 우선순위 등"></textarea></label>
+      <button id="savePlanBtn" type="button" class="accent-btn">저장</button>
+    </form>
+  </dialog>
+
+  <dialog id="installDialog">
+    <div class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">INSTALL</p><h3>아이폰 홈 화면에 설치</h3></div><button class="icon-btn" onclick="this.closest('dialog').close()">×</button></div>
+      <ol class="install-steps">
+        <li>Safari에서 ESCAPE PASS 주소를 엽니다.</li>
+        <li>하단의 <b>공유</b> 버튼을 누릅니다.</li>
+        <li><b>홈 화면에 추가</b>를 선택합니다.</li>
+        <li>추가 후 홈 화면의 ESCAPE PASS 아이콘으로 실행합니다.</li>
+      </ol>
+      <p class="micro">PWA 설치는 HTTPS 주소에서 사용하는 것이 가장 안정적입니다.</p>
+    </div>
+  </dialog>
+
+  <dialog id="scriptsDialog">
+    <div class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">USERSCRIPTS</p><h3>설치 체크</h3></div><button class="icon-btn" onclick="this.closest('dialog').close()">×</button></div>
+      <div id="scriptChecklist" class="check-list"></div>
+      <p class="micro">웹앱은 Safari Userscripts 앱의 실제 설치 여부를 읽을 수 없어서 체크 상태는 직접 표시합니다.</p>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+  <script>window.ESCAPE_SITES = [{"id": "keyescape", "name": "KEYESCAPE", "subtitle": "키이스케이프", "url": "https://www.keyescape.com/reservation1.php", "badge": "reCAPTCHA", "accent": "#7C3AED", "icon": "K"}, {"id": "zeroworld", "name": "ZEROWORLD", "subtitle": "제로월드", "url": "https://zeroworldkorea.com/layout/res/home.php?go=rev.make&s_subj=A", "badge": "이미지 CAPTCHA", "accent": "#2563EB", "icon": "Z"}, {"id": "doomescape", "name": "DOOMESCAPE", "subtitle": "둠이스케이프", "url": "https://doomescape.com/layout/res/home.php?go=rev.make", "badge": "AUTO", "accent": "#DC2626", "icon": "D"}, {"id": "play33", "name": "PLAY33", "subtitle": "플레이33", "url": "https://play33.kr/reservation", "badge": "AUTO", "accent": "#F59E0B", "icon": "33"}, {"id": "dps", "name": "단편선", "subtitle": "강남점", "url": "https://dpsnnn.com/reserve_g", "badge": "AUTO", "accent": "#EC4899", "icon": "단"}, {"id": "ledasquare", "name": "LEDASQUARE", "subtitle": "레다스퀘어", "url": "https://ledasquare.com/layout/res/home.php?go=rev.make", "badge": "FAST", "accent": "#06B6D4", "icon": "L"}, {"id": "oasis", "name": "OASIS MUSEUM", "subtitle": "오아시스뮤지엄", "url": "https://oasismuseum.com/ticket", "badge": "FAST · 현금자동", "accent": "#22C55E", "icon": "O"}];</script>
+  <script src="app.js"></script>
+</body>
+</html>
