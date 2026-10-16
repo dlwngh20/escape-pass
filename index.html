@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="styles.css">
-<title>ESCAPE PASS v2.2</title>
+<title>ESCAPE PASS v2.3</title>
 </head>
 <body>
 <div class="ambient"></div>
@@ -102,7 +102,7 @@
       <section class="glass engine-card">
         <div class="engine-status">
           <span class="engine-icon">⚡</span>
-          <div><b>ESCAPE PASS ENGINE v2.2</b><p>iPhone Userscripts / PC Tampermonkey 공용</p></div>
+          <div><b>ESCAPE PASS ENGINE v2.3</b><p>iPhone Userscripts / PC Tampermonkey 공용</p></div>
         </div>
         <a href="userscript/ESCAPE_PASS_ENGINE.user.js" class="secondary full-link">통합 엔진 파일 열기</a>
         <div class="engine-guide">
@@ -129,7 +129,7 @@
     <div id="hint" class="hint"></div>
     <div class="two"><label>예약 날짜<input id="date" type="date"></label><label>희망 시간<input id="time" type="time"></label></div>
     <label>지점 / 매장<select id="branch"></select></label>
-    <label>테마<input id="theme" placeholder="테마명"></label>
+    <label>테마<select id="theme"></select></label>
     <details><summary>고급 설정</summary><label>오픈 시각 (선택)<input id="openAt" type="datetime-local"></label><label>입금자명 (단편선용)<input id="depositor"></label></details>
     <div id="captchaFlow" class="captcha-flow"></div>
     <div id="profilePreview" class="preview"></div>
@@ -149,7 +149,7 @@
     <div id="planHint" class="hint"></div>
     <div class="two"><label>예약 날짜<input id="planDate" type="date"></label><label>희망 시간<input id="planTime" type="time"></label></div>
     <label>지점 / 매장<select id="planBranch"></select></label>
-    <label>테마<input id="planTheme"></label>
+    <label>테마<select id="planTheme"></select></label>
     <details><summary>고급 설정</summary><label>오픈 시각 (선택)<input id="planOpenAt" type="datetime-local"></label><label>입금자명 (단편선용)<input id="planDepositor"></label></details>
     <label>메모<input id="planMemo" placeholder="예: 20시 오픈 / 최우선"></label>
     <button id="savePlanBtn" class="primary full">플랜 저장</button>
@@ -158,7 +158,7 @@
 
 <div id="toast" class="toast"></div>
 <script>
-window.ESCAPE_SITES = [{"id": "keyescape", "name": "KEYESCAPE", "sub": "키이스케이프", "url": "https://www.keyescape.com/reservation1.php", "accent": "#8b5cf6", "badge": "reCAPTCHA", "branches": ["더오름", "우주라이크", "LOG_IN1", "LOG_IN2", "메모리컴퍼니", "후즈데어", "STATION", "무비무드", "강남점", "부산점", "전주점", "홍대점"], "theme": "테마명", "note": "STEP2에 진입하면 reCAPTCHA가 표시됩니다. 직접 체크하면 FAST 대기가 자동 시작됩니다."}, {"id": "zeroworld", "name": "ZEROWORLD", "sub": "제로월드", "url": "https://zeroworldkorea.com/layout/res/home.php?go=rev.make&s_subj=A", "accent": "#3b82f6", "badge": "CAPTCHA", "branches": ["김포본점", "강남점", "홍대점", "다이브 건대점"], "theme": "테마명", "note": "자동예약 시작 후 예약페이지에서 CAPTCHA 이미지와 입력칸을 자동으로 열어줍니다."}, {"id": "doomescape", "name": "DOOMESCAPE", "sub": "둠이스케이프", "url": "https://doomescape.com/layout/res/home.php?go=rev.make", "accent": "#ef4444", "badge": "AUTO", "branches": ["1호점", "2호점", "DTH점(부평)", "FEAR점(수원)"], "theme": "테마명", "note": "설정 수신 후 자동 대기 시작"}, {"id": "play33", "name": "PLAY33", "sub": "플레이33", "url": "https://play33.kr/reservation", "accent": "#f59e0b", "badge": "FAST", "branches": ["건대점", "홍대점", "대전점", "수원점"], "theme": "테마명", "note": "설정 수신 후 FAST 예약 시작"}, {"id": "dps", "name": "단편선", "sub": "강남점", "url": "https://dpsnnn.com/reserve_g", "accent": "#ec4899", "badge": "AUTO", "branches": ["강남점"], "theme": "상자 / 행복", "note": "강남점 고정 · 로그인이 필요하면 로그인 후 자동 이어짐"}, {"id": "ledasquare", "name": "LEDASQUARE", "sub": "레다스퀘어", "url": "https://ledasquare.com/layout/res/home.php?go=rev.make", "accent": "#06b6d4", "badge": "FAST", "branches": ["홍대점"], "theme": "세진마 / 아바타 / 사진상", "note": "홍대점 FAST 엔진 연결"}, {"id": "oasis", "name": "OASIS MUSEUM", "sub": "오아시스뮤지엄", "url": "https://oasismuseum.com/ticket", "accent": "#22c55e", "badge": "FAST · CASH", "branches": ["홍대점"], "theme": "업사이드 다운 / 미씽 삭스 미스터리 / 배드 타임 / 하이 맥스 / 4 SUM 1", "note": "FAST + 현금/무통장 자동신청"}];
+window.ESCAPE_SITES = [{"id": "keyescape", "name": "KEYESCAPE", "sub": "키이스케이프", "url": "https://www.keyescape.com/reservation1.php", "accent": "#8b5cf6", "badge": "reCAPTCHA", "branches": ["더오름", "우주라이크", "LOG_IN1", "LOG_IN2", "메모리컴퍼니", "후즈데어", "STATION", "무비무드", "강남점", "부산점", "전주점", "홍대점"], "themesByBranch": {"더오름": ["엔제리오", "네드"], "우주라이크": ["WANNA GO HOME", "US"], "LOG_IN1": ["FOR FREE", "머니머니패키지"], "LOG_IN2": ["NOT MONKEY PROJECT", "A GENTLE MONDAY", "BACK TO THE SCENE+"], "메모리컴퍼니": ["FILM BY EDDY", "FILM BY STEVE", "FILM BY BOB"], "후즈데어": ["AYAKO", "투투 어드벤쳐", "괴록"], "STATION": ["머니머니부동산", "내 방", "NOSTALGIA VISTA"], "무비무드": ["HAVE A GOOD TAPE, DAVE", "Cat", "시아와세 환전소", "AFTERLIFE AIRLINES", "5관 E열 4번", "ONCE OVEN A TIME"], "강남점": ["그카지말라캤자나", "살랑살랑연구소", "월야애담-영문병행표기"], "부산점": ["난쟁이의 장난-영문병행표기", "신비의숲 고대마법의 비밀", "셜록 죽음의 전화", "정신병동", "파파라치"], "전주점": ["살랑살랑연구소", "월야애담-영문병행표기", "혜화잡화점", "사라진 목격자"], "홍대점": ["삐릿-뽀", "홀리데이", "고백"]}, "note": "STEP2에 진입하면 reCAPTCHA가 표시됩니다. 직접 체크하면 FAST 대기가 자동 시작됩니다.", "catalogUpdated": "2026-10-16"}, {"id": "zeroworld", "name": "ZEROWORLD", "sub": "제로월드", "url": "https://zeroworldkorea.com/layout/res/home.php?go=rev.make&s_subj=A", "accent": "#3b82f6", "badge": "CAPTCHA", "branches": ["김포본점", "강남점", "홍대점", "다이브 건대점"], "themesByBranch": {"김포본점": ["FEAR", "해리포터의 모험 SE : 마법모자의 위기", "검은사원 SE", "피노키오 대탈출", "복희네 사진관 SE", "최면", "성역전설", "인형괴담", "어느 겨울밤", "탈옥 : 특별수용소", "제로호텔"], "강남점": ["링", "제로", "콜러", "아이엠", "나비효과", "헐!", "어느 겨울밤2", "DONE", "포레스트 (FORREST)", "제로호텔L"], "홍대점": ["층간소음", "사랑...하는...감?", "ALIVE", "NOX", "깜방탈출 : WAY OUT"], "다이브 건대점": ["인터뷰 (INTERVIEW)", "오르골 (ORGEL)"]}, "note": "자동예약 시작 후 예약페이지에서 CAPTCHA 이미지와 입력칸을 자동으로 열어줍니다.", "catalogUpdated": "2026-10-16"}, {"id": "doomescape", "name": "DOOMESCAPE", "sub": "둠이스케이프", "url": "https://doomescape.com/layout/res/home.php?go=rev.make", "accent": "#ef4444", "badge": "AUTO", "branches": ["1호점", "2호점", "DTH점(부평)", "FEAR점(수원)"], "themesByBranch": {"1호점": ["나폴리탄", "Rendering", "기담정", "인앤아웃"], "2호점": ["운명", "디스토피아", "죄", "인바이트"], "DTH점(부평)": ["슬래셔", "트리거", "언리얼", "스네어"], "FEAR점(수원)": ["허수아비", "옵스큐라", "데이투어"]}, "note": "설정 수신 후 자동 대기 시작", "catalogUpdated": "2026-10-16"}, {"id": "play33", "name": "PLAY33", "sub": "플레이33", "url": "https://play33.kr/reservation", "accent": "#f59e0b", "badge": "FAST", "branches": ["건대점", "홍대점", "대전점", "수원점"], "themesByBranch": {"건대점": ["다이얼", "그날", "목격자"], "홍대점": ["피안화"], "대전점": ["우울해서 빵 샀어", "자각몽(自覺夢)", "I am Still Here, ELLEN", "강천여자고등학교", "좌충우돌 꼬마마법사"], "수원점": ["기억 : 끝나지 않을 꿈"]}, "note": "설정 수신 후 FAST 예약 시작", "catalogUpdated": "2026-10-16"}, {"id": "dps", "name": "단편선", "sub": "강남점", "url": "https://dpsnnn.com/reserve_g", "accent": "#ec4899", "badge": "AUTO", "branches": ["강남점"], "themesByBranch": {"강남점": ["상자", "행복"]}, "note": "강남점 고정 · 로그인이 필요하면 로그인 후 자동 이어짐", "catalogUpdated": "2026-10-16"}, {"id": "ledasquare", "name": "LEDASQUARE", "sub": "레다스퀘어", "url": "https://ledasquare.com/layout/res/home.php?go=rev.make", "accent": "#06b6d4", "badge": "FAST", "branches": ["홍대점"], "themesByBranch": {"홍대점": ["세진마", "아바타", "사진상"]}, "note": "홍대점 FAST 엔진 연결", "catalogUpdated": "2026-10-16"}, {"id": "oasis", "name": "OASIS MUSEUM", "sub": "오아시스뮤지엄", "url": "https://oasismuseum.com/ticket", "accent": "#22c55e", "badge": "FAST · CASH", "branches": ["홍대점"], "themesByBranch": {"홍대점": ["업사이드 다운", "미씽 삭스 미스터리", "배드 타임 (BÆD TIME)", "하이 맥스 (HIGH MAX)", "4 SUM 1"]}, "note": "FAST + 현금/무통장 자동신청", "catalogUpdated": "2026-10-16"}];
 </script>
 <script src="app.js"></script>
 </body>

@@ -1,6 +1,6 @@
 
-const SITES=window.ESCAPE_SITES||[],KEY='escape_pass_v22';
-const LEGACY_KEYS=['escape_pass_v21','escape_pass_v2','escape_pass_v1'];
+const SITES=window.ESCAPE_SITES||[],KEY='escape_pass_v23';
+const LEGACY_KEYS=['escape_pass_v22','escape_pass_v21','escape_pass_v2','escape_pass_v1'];
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const isDesktop=!isIOS && matchMedia('(min-width:761px)').matches;
@@ -37,6 +37,28 @@ function setBranchSelect(el, siteId, selected=''){
   else if(list.length===1) el.value=list[0];
   else el.value='';
 }
+function themesFor(siteId, branch){
+  const s=site(siteId);
+  return s?.themesByBranch?.[branch] || [];
+}
+function setThemeSelect(el, siteId, branch, selected=''){
+  const list=themesFor(siteId,branch);
+  el.innerHTML='<option value="">테마를 선택하세요</option>'+list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  el.disabled=!branch || !list.length;
+  if(selected && list.includes(selected)) el.value=selected;
+  else if(selected && !list.includes(selected)){
+    const opt=document.createElement('option');
+    opt.value=selected; opt.textContent=selected+' (기존 저장값)';
+    el.appendChild(opt); el.value=selected;
+  } else if(list.length===1) el.value=list[0];
+  else el.value='';
+}
+function syncBranchTheme(siteEl, branchEl, themeEl, selectedBranch='', selectedTheme=''){
+  const sid=siteEl.value;
+  setBranchSelect(branchEl,sid,selectedBranch);
+  setThemeSelect(themeEl,sid,branchEl.value,selectedTheme);
+}
+
 function captchaFlowFor(siteId){
   const box=$('#captchaFlow'); if(!box) return;
   if(siteId==='zeroworld'){
@@ -85,15 +107,18 @@ function render(){
 function openBook(id){
   const s=site(id),p=state.data.profile||{};
   $('#site').innerHTML=SITES.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
-  $('#site').value=id||SITES[0].id;$('#date').value='';$('#time').value='';setBranchSelect($('#branch'),$('#site').value,'');$('#theme').value='';$('#openAt').value='';$('#depositor').value='';
+  $('#site').value=id||SITES[0].id;$('#date').value='';$('#time').value='';
+  syncBranchTheme($('#site'),$('#branch'),$('#theme'),'','');
+  $('#openAt').value='';$('#depositor').value='';
   updateHint();captchaFlowFor($('#site').value);
   $('#profilePreview').innerHTML=`<b>예약자 프로필</b><br>${esc(p.name||'이름 미설정')} · ${esc(p.phone||'전화번호 미설정')} · ${esc(p.people||'2')}명`;
   $('#bookDialog').showModal()
 }
 function updateHint(){
   const s=site($('#site').value);if(!s)return;
-  $('#hint').innerHTML=`<b>${esc(s.name)}</b><br>지점은 목록에서 선택 · 테마: ${esc(s.theme)}<br>${esc(s.note)}`;
-  $('#theme').placeholder=s.theme;
+  const b=$('#branch').value;
+  const count=themesFor(s.id,b).length;
+  $('#hint').innerHTML=`<b>${esc(s.name)}</b><br>지점 선택 → 해당 지점 테마 목록 자동 표시${b?` · ${esc(b)} ${count}개`:''}<br>${esc(s.note)}<br><small>테마 목록 기준: ${esc(s.catalogUpdated||'')}</small>`;
   captchaFlowFor(s.id);
 }
 function startSingle(){
@@ -105,13 +130,15 @@ function startSingle(){
 function openPlanDialog(plan=null){
   $('#planDialogTitle').textContent=plan?'예약 플랜 수정':'예약 플랜 추가';
   $('#planId').value=plan?.id||'';$('#planSite').value=plan?.site||SITES[0].id;$('#planDate').value=plan?.date||'';$('#planTime').value=plan?.time||'';
-  setBranchSelect($('#planBranch'),$('#planSite').value,plan?.branch||'');$('#planTheme').value=plan?.theme||'';$('#planOpenAt').value=plan?.openAt||'';$('#planDepositor').value=plan?.depositor||'';$('#planMemo').value=plan?.memo||'';
+  syncBranchTheme($('#planSite'),$('#planBranch'),$('#planTheme'),plan?.branch||'',plan?.theme||'');
+  $('#planOpenAt').value=plan?.openAt||'';$('#planDepositor').value=plan?.depositor||'';$('#planMemo').value=plan?.memo||'';
   updatePlanHint();$('#planDialog').showModal()
 }
 function updatePlanHint(){
   const s=site($('#planSite').value);if(!s)return;
-  $('#planHint').innerHTML=`<b>${esc(s.name)}</b><br>지점은 목록에서 선택 · 테마: ${esc(s.theme)}<br>${esc(s.note)}`;
-  $('#planTheme').placeholder=s.theme;
+  const b=$('#planBranch').value;
+  const count=themesFor(s.id,b).length;
+  $('#planHint').innerHTML=`<b>${esc(s.name)}</b><br>지점 선택 → 테마 목록 자동 표시${b?` · ${esc(b)} ${count}개`:''}<br>${esc(s.note)}`;
 }
 function savePlan(){
   const p={id:$('#planId').value||`${Date.now()}-${Math.random().toString(16).slice(2,7)}`,site:$('#planSite').value,date:$('#planDate').value,time:$('#planTime').value,branch:$('#planBranch').value.trim(),theme:$('#planTheme').value.trim(),openAt:$('#planOpenAt').value||'',depositor:$('#planDepositor').value.trim(),memo:$('#planMemo').value.trim(),selected:true};
@@ -159,9 +186,9 @@ function installApp(){
 }
 function init(){
   load();pad();
-  $('#lockBtn').onclick=()=>showLock(false);$('#fastBtn').onclick=()=>openBook(state.data.last?.site||SITES[0].id);$('#closeDialog').onclick=()=>$('#bookDialog').close();$('#site').onchange=()=>{setBranchSelect($('#branch'),$('#site').value,'');updateHint()};$('#start').onclick=startSingle;
+  $('#lockBtn').onclick=()=>showLock(false);$('#fastBtn').onclick=()=>openBook(state.data.last?.site||SITES[0].id);$('#closeDialog').onclick=()=>$('#bookDialog').close();$('#site').onchange=()=>{syncBranchTheme($('#site'),$('#branch'),$('#theme'),'','');updateHint()};$('#branch').onchange=()=>{setThemeSelect($('#theme'),$('#site').value,$('#branch').value,'');updateHint()};$('#start').onclick=startSingle;
   $('#saveProfile').onclick=()=>{state.data.profile={name:$('#name').value.trim(),phone:$('#phone').value.trim(),people:$('#people').value};save();render();toast('프로필 저장 완료')};
-  $('#addPlanBtn').onclick=()=>openPlanDialog();$('#closePlanDialog').onclick=()=>$('#planDialog').close();$('#savePlanBtn').onclick=savePlan;$('#planSite').innerHTML=SITES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');$('#planSite').onchange=()=>{setBranchSelect($('#planBranch'),$('#planSite').value,'');updatePlanHint()};
+  $('#addPlanBtn').onclick=()=>openPlanDialog();$('#closePlanDialog').onclick=()=>$('#planDialog').close();$('#savePlanBtn').onclick=savePlan;$('#planSite').innerHTML=SITES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');$('#planSite').onchange=()=>{syncBranchTheme($('#planSite'),$('#planBranch'),$('#planTheme'),'','');updatePlanHint()};$('#planBranch').onchange=()=>{setThemeSelect($('#planTheme'),$('#planSite').value,$('#planBranch').value,'');updatePlanHint()};
   $('#selectAllBtn').onclick=()=>{const all=state.data.plans.every(x=>x.selected!==false);state.data.plans.forEach(x=>x.selected=!all);save();renderPlans()};
   $('#runSelectedBtn').onclick=runSelected;$('#goPlansBtn').onclick=()=>$('#plansSection').scrollIntoView({behavior:'smooth'});$('#installBtn').onclick=installApp;
   window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstall=e});

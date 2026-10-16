@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         ESCAPE PASS ENGINE v2.2 BRANCH + CAPTCHA FLOW
+// @name         ESCAPE PASS ENGINE v2.3 BRANCH + THEME
 // @namespace    escape.pass.universal
-// @version      2.2.0
-// @description  ESCAPE PASS iPhone/PC 공용 엔진. 지점 선택 연동 및 CAPTCHA 사용자 입력 대기 UX 개선.
+// @version      2.3.0
+// @description  ESCAPE PASS iPhone/PC 공용 엔진. 사이트/지점/테마 연동 선택 및 CAPTCHA 사용자 입력 흐름.
 // @match        *://keyescape.com/*
 // @match        *://www.keyescape.com/*
 // @match        *://*.keyescape.com/*
