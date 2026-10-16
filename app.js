@@ -1,244 +1,137 @@
 
-const SITES = window.ESCAPE_SITES || [];
-const KEY = 'escape_pass_v1';
-const $ = s => document.querySelector(s);
-const $$ = s => [...document.querySelectorAll(s)];
-const state = {
-  data: {
-    profile:{name:'',phone:'',people:'2'},
-    plans:[],
-    scripts:{},
-    pin:null,
-    pinSalt:null,
-    deviceId:null
-  },
-  pinBuffer:'',
-  setupMode:false,
-  firstPin:null
-};
+const SITES=window.ESCAPE_SITES||[],KEY='escape_pass_v21';
+const LEGACY_KEYS=['escape_pass_v2','escape_pass_v1'];
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const isDesktop=!isIOS && matchMedia('(min-width:761px)').matches;
+const state={data:{pin:null,salt:null,profile:{name:'',phone:'',people:'2'},last:null,plans:[]},buf:'',first:null,setup:false,deferredInstall:null};
 
 function load(){
-  try{
-    const raw=localStorage.getItem(KEY);
-    if(raw) state.data={...state.data,...JSON.parse(raw)};
-  }catch{}
-  if(!state.data.deviceId){
-    state.data.deviceId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-    save();
-  }
+  let raw=localStorage.getItem(KEY);
+  if(!raw){for(const k of LEGACY_KEYS){raw=localStorage.getItem(k);if(raw)break}}
+  try{if(raw){const x=JSON.parse(raw);state.data={...state.data,...x,plans:Array.isArray(x.plans)?x.plans:[]}}}catch{}
+  save()
 }
-function save(){ localStorage.setItem(KEY,JSON.stringify(state.data)); }
+function save(){localStorage.setItem(KEY,JSON.stringify(state.data))}
+function toast(t){const x=$('#toast');x.textContent=t;x.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>x.classList.remove('show'),2200)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function rnd(){const a=new Uint8Array(16);crypto.getRandomValues(a);return[...a].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function hash(pin,salt){const e=new TextEncoder(),k=await crypto.subtle.importKey('raw',e.encode(pin),'PBKDF2',false,['deriveBits']),sa=new Uint8Array(salt.match(/../g).map(x=>parseInt(x,16))),b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:sa,iterations:120000,hash:'SHA-256'},k,256);return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function dots(){$$('.dots i').forEach((x,i)=>x.classList.toggle('on',i<state.buf.length))}
+function showLock(setup){state.setup=setup;state.buf='';state.first=null;$('#app').classList.add('hidden');$('#lock').classList.remove('hidden');$('#lockText').textContent=setup?'4자리 PIN을 설정하세요.':'PIN을 입력해 잠금을 해제하세요.';dots()}
+function unlock(){$('#lock').classList.add('hidden');$('#app').classList.remove('hidden');render()}
+async function submitPin(){if(state.buf.length!==4)return;if(state.setup){if(!state.first){state.first=state.buf;state.buf='';$('#lockText').textContent='한 번 더 입력해 확인하세요.';dots();return}if(state.first!==state.buf){$('#pinMsg').textContent='PIN이 일치하지 않아요.';state.first=null;state.buf='';dots();return}state.data.salt=rnd();state.data.pin=await hash(state.buf,state.data.salt);save();unlock();toast('PIN 설정 완료')}else{if(await hash(state.buf,state.data.salt)===state.data.pin)unlock();else{$('#pinMsg').textContent='PIN이 맞지 않아요.';state.buf='';dots();setTimeout(()=>$('#pinMsg').textContent='',1200)}}}
+function pad(){const a=['1','2','3','4','5','6','7','8','9','','0','⌫'];$('#pad').innerHTML=a.map(n=>n?`<button data-k="${n}">${n}</button>`:'<span></span>').join('');$('#pad').onclick=e=>{const k=e.target.dataset.k;if(!k)return;if(k==='⌫')state.buf=state.buf.slice(0,-1);else if(state.buf.length<4)state.buf+=k;dots();if(state.buf.length===4)setTimeout(submitPin,80)}}
 
-function toast(msg){
-  const el=$('#toast'); el.textContent=msg; el.classList.add('show');
-  clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('show'),1800);
+function b64u(t){const b=new TextEncoder().encode(t);let s='';b.forEach(x=>s+=String.fromCharCode(x));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function site(id){return SITES.find(x=>x.id===id)}
+function makePayload(cfg){
+  const p=state.data.profile||{};
+  return {v:2,runId:crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`,autoStart:true,ts:Date.now(),
+    site:cfg.site,date:cfg.date,time:cfg.time,branch:cfg.branch||'',theme:cfg.theme||'',openAt:cfg.openAt||'',depositor:cfg.depositor||'',
+    name:(p.name||'').trim(),phone:(p.phone||'').trim(),people:String(p.people||'2')}
 }
-function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function fmtDate(d){
-  if(!d) return '-';
-  const x=new Date(`${d}T00:00:00`);
-  return `${x.getMonth()+1}월 ${x.getDate()}일`;
+function validatePayload(cfg){
+  const m=[];if(!cfg.date)m.push('날짜');if(!cfg.time)m.push('시간');if(!cfg.theme)m.push('테마');if(!cfg.branch&&cfg.site!=='dps')m.push('지점');if(!cfg.name)m.push('프로필 이름');if(!cfg.phone)m.push('프로필 전화번호');return m
 }
-function daysUntil(d){
-  const a=new Date(); a.setHours(0,0,0,0);
-  const b=new Date(`${d}T00:00:00`);
-  return Math.round((b-a)/86400000);
-}
-
-async function derivePin(pin,saltHex){
-  const enc=new TextEncoder();
-  const key=await crypto.subtle.importKey('raw',enc.encode(pin),'PBKDF2',false,['deriveBits']);
-  const salt=new Uint8Array(saltHex.match(/.{1,2}/g).map(x=>parseInt(x,16)));
-  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:120000,hash:'SHA-256'},key,256);
-  return [...new Uint8Array(bits)].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-function randomHex(n=16){
-  const a=new Uint8Array(n); crypto.getRandomValues(a);
-  return [...a].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-
-function showLock(setup=false){
-  state.setupMode=setup; state.pinBuffer=''; state.firstPin=null;
-  $('#app').classList.add('hidden'); $('#lockScreen').classList.remove('hidden');
-  $('#lockTitle').textContent=setup?'PIN 만들기':'ESCAPE PASS';
-  $('#lockDesc').textContent=setup?'4자리 PIN을 설정하세요.':'PIN을 입력해 잠금을 해제하세요.';
-  renderDots();
-}
-function unlock(){
-  $('#lockScreen').classList.add('hidden'); $('#app').classList.remove('hidden');
-  renderAll();
-}
-function renderDots(){
-  $$('#pinDots b').forEach((x,i)=>x.classList.toggle('on',i<Math.min(4,state.pinBuffer.length)));
-}
-async function submitPin(){
-  const pin=state.pinBuffer;
-  if(pin.length<4) return;
-  if(state.setupMode){
-    if(!state.firstPin){
-      state.firstPin=pin; state.pinBuffer='';
-      $('#lockDesc').textContent='한 번 더 입력해 확인하세요.'; renderDots(); return;
-    }
-    if(pin!==state.firstPin){
-      $('#pinError').textContent='PIN이 일치하지 않아요.'; state.pinBuffer=''; state.firstPin=null; renderDots(); return;
-    }
-    const salt=randomHex();
-    state.data.pinSalt=salt;
-    state.data.pin=await derivePin(pin,salt);
-    save(); unlock(); toast('PIN 설정 완료');
-  }else{
-    const hash=await derivePin(pin,state.data.pinSalt);
-    if(hash===state.data.pin){ unlock(); }
-    else{
-      $('#pinError').textContent='PIN이 맞지 않아요.';
-      state.pinBuffer=''; renderDots();
-      setTimeout(()=>$('#pinError').textContent='',1300);
-    }
-  }
-}
-function renderPinPad(){
-  const nums=['1','2','3','4','5','6','7','8','9','','0','⌫'];
-  $('#pinPad').innerHTML=nums.map(n=>n?`<button class="pin-key" data-key="${n}">${n}</button>`:`<span></span>`).join('');
-  $('#pinPad').addEventListener('click',e=>{
-    const k=e.target.dataset.key;if(!k)return;
-    if(k==='⌫')state.pinBuffer=state.pinBuffer.slice(0,-1);
-    else if(state.pinBuffer.length<4)state.pinBuffer+=k;
-    renderDots();
-    if(state.pinBuffer.length===4)setTimeout(submitPin,100);
-  });
-  $('#useKeyboardBtn').onclick=()=>{ $('#pinInput').style.pointerEvents='auto'; $('#pinInput').focus(); };
-  $('#pinInput').addEventListener('input',e=>{
-    state.pinBuffer=e.target.value.replace(/\D/g,'').slice(0,4);
-    renderDots(); if(state.pinBuffer.length===4)setTimeout(submitPin,100);
-  });
+function targetUrl(payload){const s=site(payload.site);return s.url.replace(/#.*$/,'')+'#ep='+encodeURIComponent(b64u(JSON.stringify(payload)))}
+function launchPayload(payload, mode='single'){
+  const missing=validatePayload(payload);if(missing.length){toast('확인: '+missing.join(', '));return false}
+  state.data.last=payload;save();
+  const url=targetUrl(payload);
+  if(isDesktop || mode==='tab'){
+    const w=window.open(url,'_blank','noopener');
+    if(!w){toast('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.');return false}
+  }else location.href=url;
+  return true
 }
 
-function renderSites(){
-  $('#siteGrid').innerHTML=SITES.map(s=>`
-    <button class="site-card" style="--site-color:${s.accent}" data-open-site="${s.id}">
-      <div class="site-icon">${escapeHtml(s.icon)}</div>
-      <div class="site-name">${escapeHtml(s.name)}</div>
-      <div class="site-sub">${escapeHtml(s.subtitle)}</div>
-      <div class="site-bottom"><span class="site-badge">${escapeHtml(s.badge)}</span><span class="arrow">↗</span></div>
-    </button>`).join('');
-  $$('[data-open-site]').forEach(b=>b.onclick=()=>openSite(b.dataset.openSite));
+function render(){
+  const p=state.data.profile||{};
+  $('#name').value=p.name||'';$('#phone').value=p.phone||'';$('#people').value=p.people||'2';
+  $('#profileState').textContent=p.name&&p.phone?'완료':'미설정';
+  $('#lastState').textContent=state.data.last?site(state.data.last.site)?.name||'실행됨':'없음';
+  $('#deviceBadge').textContent=isIOS?'iPhone · Safari':'PC · Chrome/Edge';
+  $('#siteCount').textContent=SITES.length;
+  $('#grid').innerHTML=SITES.map(s=>`<article class="site glass" style="--c:${s.accent}"><div class="icon">${esc(s.name==='PLAY33'?'33':s.name[0])}</div><h4>${esc(s.name)}</h4><p>${esc(s.sub)}</p><span class="badge">${esc(s.badge)}</span><button data-site="${s.id}">⚡ 자동예약</button></article>`).join('');
+  $$('[data-site]').forEach(b=>b.onclick=()=>openBook(b.dataset.site));
+  renderPlans();
 }
-function openSite(id){
-  const s=SITES.find(x=>x.id===id); if(!s)return;
-  window.open(s.url,'_blank','noopener');
-  toast(`${s.name} 열기`);
+function openBook(id){
+  const s=site(id),p=state.data.profile||{};
+  $('#site').innerHTML=SITES.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
+  $('#site').value=id||SITES[0].id;$('#date').value='';$('#time').value='';$('#branch').value=s.branchDefault||'';$('#theme').value='';$('#openAt').value='';$('#depositor').value='';
+  updateHint();
+  $('#profilePreview').innerHTML=`<b>예약자 프로필</b><br>${esc(p.name||'이름 미설정')} · ${esc(p.phone||'전화번호 미설정')} · ${esc(p.people||'2')}명`;
+  $('#bookDialog').showModal()
+}
+function updateHint(){const s=site($('#site').value);if(!s)return;$('#hint').innerHTML=`<b>${esc(s.name)}</b><br>지점: ${esc(s.branch)}<br>테마: ${esc(s.theme)}<br>${esc(s.note)}`;$('#branch').placeholder=s.branch;if(s.branchDefault&&!$('#branch').value)$('#branch').value=s.branchDefault;$('#theme').placeholder=s.theme}
+function startSingle(){
+  const cfg={site:$('#site').value,date:$('#date').value,time:$('#time').value,branch:$('#branch').value.trim(),theme:$('#theme').value.trim(),openAt:$('#openAt').value||'',depositor:$('#depositor').value.trim()};
+  const payload=makePayload(cfg);const m=validatePayload(payload);if(m.length){toast('확인: '+m.join(', '));return}
+  $('#bookDialog').close();launchPayload(payload)
+}
+
+function openPlanDialog(plan=null){
+  $('#planDialogTitle').textContent=plan?'예약 플랜 수정':'예약 플랜 추가';
+  $('#planId').value=plan?.id||'';$('#planSite').value=plan?.site||SITES[0].id;$('#planDate').value=plan?.date||'';$('#planTime').value=plan?.time||'';
+  $('#planBranch').value=plan?.branch||site($('#planSite').value)?.branchDefault||'';$('#planTheme').value=plan?.theme||'';$('#planOpenAt').value=plan?.openAt||'';$('#planDepositor').value=plan?.depositor||'';$('#planMemo').value=plan?.memo||'';
+  updatePlanHint();$('#planDialog').showModal()
+}
+function updatePlanHint(){const s=site($('#planSite').value);if(!s)return;$('#planHint').innerHTML=`<b>${esc(s.name)}</b><br>지점: ${esc(s.branch)} · 테마: ${esc(s.theme)}<br>${esc(s.note)}`;$('#planBranch').placeholder=s.branch;$('#planTheme').placeholder=s.theme;if(s.branchDefault&&!$('#planBranch').value)$('#planBranch').value=s.branchDefault}
+function savePlan(){
+  const p={id:$('#planId').value||`${Date.now()}-${Math.random().toString(16).slice(2,7)}`,site:$('#planSite').value,date:$('#planDate').value,time:$('#planTime').value,branch:$('#planBranch').value.trim(),theme:$('#planTheme').value.trim(),openAt:$('#planOpenAt').value||'',depositor:$('#planDepositor').value.trim(),memo:$('#planMemo').value.trim(),selected:true};
+  if(!p.date||!p.time||!p.theme){toast('날짜·시간·테마를 확인하세요.');return}
+  if(!p.branch&&p.site!=='dps'){toast('지점을 입력하세요.');return}
+  const i=state.data.plans.findIndex(x=>x.id===p.id);if(i>=0)state.data.plans[i]={...state.data.plans[i],...p};else state.data.plans.push(p);
+  save();$('#planDialog').close();renderPlans();toast('플랜 저장 완료')
 }
 function renderPlans(){
-  const plans=[...state.data.plans].sort((a,b)=>`${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
-  $('#planCount').textContent=plans.length;
-  if(!plans.length){
-    $('#planList').innerHTML=`<div class="empty">아직 저장된 예약 플랜이 없어요.<br>새 플랜을 만들어두면 오픈런 준비가 훨씬 편해져요.</div>`;
-  }else{
-    $('#planList').innerHTML=plans.map(p=>planCard(p,true)).join('');
-  }
-  const future=plans.find(p=>new Date(`${p.date}T${p.time||'00:00'}`)>=new Date());
-  $('#nextPlan').innerHTML=future?planCard(future,false):`<div class="empty">예정된 예약 플랜이 없습니다.</div>`;
-  bindPlanActions();
+  const plans=state.data.plans||[];$('#planCount').textContent=plans.length;
+  if(!plans.length){$('#planList').innerHTML='<div class="empty">저장된 예약 플랜이 없습니다.<br>PC에서는 여러 플랜을 선택해 동시에 새 탭으로 실행할 수 있습니다.</div>';return}
+  $('#planList').innerHTML=plans.map(p=>{const s=site(p.site)||{name:p.site,sub:'',accent:'#8b5cf6'};return `<article class="plan-row glass">
+    <input class="plan-check" type="checkbox" data-check="${p.id}" ${p.selected!==false?'checked':''}>
+    <div class="plan-main"><div class="plan-site" style="color:${s.accent}">${esc(s.name)}</div><div class="plan-sub">${esc(p.branch||'')} · ${esc(p.theme||'')}</div></div>
+    <div class="plan-extra"><div class="plan-date">${esc(p.date)}</div><div class="plan-note">${esc(p.memo||'')}</div></div>
+    <div class="plan-when"><div class="plan-time">${esc(p.time)}</div></div>
+    <div class="plan-sub">${p.openAt?'수동 오픈 '+esc(p.openAt.replace('T',' ')):'자동/사이트 규칙'}</div>
+    <div class="plan-actions"><button data-run="${p.id}">⚡ 실행</button><button data-edit="${p.id}">수정</button><button data-del="${p.id}">삭제</button></div>
+  </article>`}).join('');
+  $$('[data-check]').forEach(c=>c.onchange=()=>{const p=state.data.plans.find(x=>x.id===c.dataset.check);if(p){p.selected=c.checked;save()}});
+  $$('[data-run]').forEach(b=>b.onclick=()=>runPlan(b.dataset.run));
+  $$('[data-edit]').forEach(b=>b.onclick=()=>openPlanDialog(state.data.plans.find(x=>x.id===b.dataset.edit)));
+  $$('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('이 플랜을 삭제할까요?')){state.data.plans=state.data.plans.filter(x=>x.id!==b.dataset.del);save();renderPlans()}});
 }
-function planCard(p,full){
-  const s=SITES.find(x=>x.id===p.site)||{name:p.site,accent:'#8b5cf6'};
-  const du=daysUntil(p.date);
-  const when=du===0?'오늘':du===1?'내일':du>1?`D-${du}`:'지난 일정';
-  return `<article class="plan-card glass" data-plan="${p.id}">
-    <div class="plan-top">
-      <div><div class="plan-site" style="color:${s.accent}">${escapeHtml(s.name)}</div><div class="plan-meta">${escapeHtml(p.branch||'지점 미입력')} · ${escapeHtml(p.theme||'테마 미입력')}</div></div>
-      <div style="text-align:right"><div class="plan-time">${escapeHtml(p.time)}</div><div class="plan-meta">${fmtDate(p.date)} · ${when}</div></div>
-    </div>
-    ${p.memo?`<div class="plan-note">${escapeHtml(p.memo)}</div>`:''}
-    <div class="plan-actions">
-      <button data-launch-plan="${p.id}">예약페이지 열기</button>
-      ${full?`<button data-edit-plan="${p.id}">수정</button><button data-del-plan="${p.id}">삭제</button>`:''}
-    </div>
-  </article>`;
-}
-function bindPlanActions(){
-  $$('[data-launch-plan]').forEach(b=>b.onclick=()=>{
-    const p=state.data.plans.find(x=>x.id===b.dataset.launchPlan); if(p)openSite(p.site);
-  });
-  $$('[data-edit-plan]').forEach(b=>b.onclick=()=>openPlanDialog(state.data.plans.find(x=>x.id===b.dataset.editPlan)));
-  $$('[data-del-plan]').forEach(b=>b.onclick=()=>{
-    if(confirm('이 예약 플랜을 삭제할까요?')){
-      state.data.plans=state.data.plans.filter(x=>x.id!==b.dataset.delPlan);save();renderPlans();
-    }
-  });
-}
-function openPlanDialog(p=null){
-  $('#planDialogTitle').textContent=p?'예약 플랜 수정':'예약 플랜 추가';
-  $('#planId').value=p?.id||'';
-  $('#planSite').value=p?.site||SITES[0].id;
-  $('#planDate').value=p?.date||'';
-  $('#planTime').value=p?.time||'';
-  $('#planBranch').value=p?.branch||'';
-  $('#planTheme').value=p?.theme||'';
-  $('#planMemo').value=p?.memo||'';
-  $('#planDialog').showModal();
-}
-function savePlan(){
-  const id=$('#planId').value||`${Date.now()}-${Math.random().toString(16).slice(2,6)}`;
-  const p={id,site:$('#planSite').value,date:$('#planDate').value,time:$('#planTime').value,branch:$('#planBranch').value.trim(),theme:$('#planTheme').value.trim(),memo:$('#planMemo').value.trim()};
-  if(!p.date||!p.time){toast('날짜와 시간을 입력하세요');return}
-  const idx=state.data.plans.findIndex(x=>x.id===id);
-  if(idx>=0)state.data.plans[idx]=p; else state.data.plans.push(p);
-  save();$('#planDialog').close();renderPlans();toast('예약 플랜 저장 완료');
-}
-function renderProfile(){
-  const p=state.data.profile;
-  $('#profileName').value=p.name||'';$('#profilePhone').value=p.phone||'';$('#profilePeople').value=p.people||'2';
-  $('#profileStatus').textContent=(p.name&&p.phone)?'완료':'미설정';
-}
-function renderScripts(){
-  $('#scriptChecklist').innerHTML=SITES.map(s=>`
-    <div class="check-item"><label>${escapeHtml(s.name)}</label><input class="toggle" type="checkbox" data-script="${s.id}" ${state.data.scripts[s.id]?'checked':''}></div>
-  `).join('');
-  $$('[data-script]').forEach(x=>x.onchange=()=>{state.data.scripts[x.dataset.script]=x.checked;save();});
-}
-function navigate(view){
-  $$('.view').forEach(x=>x.classList.remove('active'));
-  $(`#${view}View`).classList.add('active');
-  $$('[data-nav]').forEach(x=>x.classList.toggle('active',x.dataset.nav===view));
-  window.scrollTo({top:0,behavior:'smooth'});
-}
-function renderAll(){
-  renderSites();renderPlans();renderProfile();renderScripts();
-  $('#siteCount').textContent=SITES.length;
-}
-function exportData(){
-  const blob=new Blob([JSON.stringify(state.data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`escape-pass-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href);
-}
-function importData(file){
-  const r=new FileReader();
-  r.onload=()=>{try{const data=JSON.parse(r.result);state.data={...state.data,...data};save();renderAll();toast('복원 완료');}catch{toast('백업 파일을 확인하세요');}};
-  r.readAsText(file);
+function runPlan(id){const p=state.data.plans.find(x=>x.id===id);if(!p)return;launchPayload(makePayload(p),isDesktop?'tab':'single')}
+function runSelected(){
+  if(!isDesktop){toast('다중 실행은 PC에서 사용해 주세요.');return}
+  const selected=state.data.plans.filter(x=>x.selected!==false);
+  if(!selected.length){toast('실행할 플랜을 체크하세요.');return}
+  const profile=state.data.profile||{};if(!profile.name||!profile.phone){toast('먼저 예약자 프로필을 저장하세요.');return}
+  const payloads=selected.map(makePayload);
+  for(const p of payloads){const m=validatePayload(p);if(m.length){toast(`${site(p.site)?.name}: ${m.join(', ')} 확인`);return}}
+  // Open blank tabs synchronously from the click event to reduce popup blocking.
+  const tabs=payloads.map(()=>window.open('about:blank','_blank'));
+  let blocked=0;
+  tabs.forEach((w,i)=>{if(!w){blocked++;return} try{w.location.href=targetUrl(payloads[i])}catch{blocked++}});
+  if(blocked)toast(`${blocked}개 탭이 차단됐어요. ESCAPE PASS 팝업을 허용해 주세요.`);
+  else{state.data.last=payloads[payloads.length-1];save();toast(`${payloads.length}개 예약 플랜 실행`) }
 }
 
-function wire(){
-  $$('[data-nav]').forEach(x=>x.onclick=()=>navigate(x.dataset.nav));
-  $('#lockBtn').onclick=()=>showLock(false);
-  $('#installHelpBtn').onclick=()=>$('#installDialog').showModal();
-  $('#addPlanBtn').onclick=()=>openPlanDialog();
-  $('#savePlanBtn').onclick=savePlan;
-  $('#planSite').innerHTML=SITES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
-  $('#profileForm').onsubmit=e=>{
-    e.preventDefault();
-    state.data.profile={name:$('#profileName').value.trim(),phone:$('#profilePhone').value.trim(),people:$('#profilePeople').value};
-    save();renderProfile();toast('프로필 저장 완료');
-  };
-  $('#scriptsBtn').onclick=()=>{renderScripts();$('#scriptsDialog').showModal()};
-  $('#exportBtn').onclick=exportData;
-  $('#importInput').onchange=e=>{if(e.target.files[0])importData(e.target.files[0])};
-  $('#changePinBtn').onclick=()=>{ if(confirm('PIN을 새로 설정할까요?')){state.data.pin=null;state.data.pinSalt=null;save();showLock(true);} };
-  $('#resetBtn').onclick=()=>{if(confirm('이 기기의 ESCAPE PASS 데이터를 모두 삭제할까요?')){localStorage.removeItem(KEY);location.reload();}};
+function installApp(){
+  if(state.deferredInstall){state.deferredInstall.prompt();state.deferredInstall.userChoice.finally(()=>state.deferredInstall=null);return}
+  if(isIOS)toast('Safari 공유 버튼 → 홈 화면에 추가를 눌러주세요.');
+  else toast('Chrome/Edge 주소창의 앱 설치 아이콘을 이용할 수 있어요.');
 }
-
-async function init(){
-  load(); renderPinPad(); wire();
-  if('serviceWorker' in navigator){ try{await navigator.serviceWorker.register('./sw.js');}catch{} }
-  if(!state.data.pin || !state.data.pinSalt) showLock(true); else showLock(false);
+function init(){
+  load();pad();
+  $('#lockBtn').onclick=()=>showLock(false);$('#fastBtn').onclick=()=>openBook(state.data.last?.site||SITES[0].id);$('#closeDialog').onclick=()=>$('#bookDialog').close();$('#site').onchange=updateHint;$('#start').onclick=startSingle;
+  $('#saveProfile').onclick=()=>{state.data.profile={name:$('#name').value.trim(),phone:$('#phone').value.trim(),people:$('#people').value};save();render();toast('프로필 저장 완료')};
+  $('#addPlanBtn').onclick=()=>openPlanDialog();$('#closePlanDialog').onclick=()=>$('#planDialog').close();$('#savePlanBtn').onclick=savePlan;$('#planSite').innerHTML=SITES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');$('#planSite').onchange=()=>{const s=site($('#planSite').value);$('#planBranch').value=s?.branchDefault||'';updatePlanHint()};
+  $('#selectAllBtn').onclick=()=>{const all=state.data.plans.every(x=>x.selected!==false);state.data.plans.forEach(x=>x.selected=!all);save();renderPlans()};
+  $('#runSelectedBtn').onclick=runSelected;$('#goPlansBtn').onclick=()=>$('#plansSection').scrollIntoView({behavior:'smooth'});$('#installBtn').onclick=installApp;
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstall=e});
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  if(!state.data.pin||!state.data.salt)showLock(true);else showLock(false)
 }
 document.addEventListener('DOMContentLoaded',init);

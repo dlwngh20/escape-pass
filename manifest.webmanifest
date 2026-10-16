@@ -1,12 +1,11 @@
 {
-  "name": "ESCAPE PASS",
+  "name": "ESCAPE PASS v2.1",
   "short_name": "ESCAPE PASS",
-  "description": "개인용 방탈출 예약 허브",
+  "description": "iPhone과 PC에서 함께 쓰는 개인용 통합 방탈출 자동예약 허브",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#08111f",
+  "background_color": "#07101f",
   "theme_color": "#0b1020",
-  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "icons/icon-192.png",

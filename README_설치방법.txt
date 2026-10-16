@@ -1,51 +1,56 @@
-ESCAPE PASS PWA v1.0
-====================
+ESCAPE PASS v2.1 CROSS-PLATFORM
+================================
 
-아이폰 홈 화면에 설치해서 사용하는 개인용 방탈출 예약 허브입니다.
+같은 GitHub Pages 주소를 iPhone과 Windows PC에서 모두 사용할 수 있습니다.
 
-포함 기능
-- 아이폰 PWA / 홈 화면 설치
-- 다크 글래스 UI
-- 첫 실행 PIN 설정 및 앱 잠금
-- 예약자 프로필 로컬 저장
-- 예약 플랜(사이트/날짜/시간/지점/테마/메모) 저장
-- KEYESCAPE / ZEROWORLD / DOOMESCAPE / PLAY33 / 단편선 / LEDASQUARE / OASIS MUSEUM 바로가기
-- Userscript 설치 체크리스트
-- 데이터 JSON 백업 / 복원
-- 오프라인 앱 셸 캐시
+[아이폰]
+- Safari에서 ESCAPE PASS 실행
+- 홈 화면 PWA 설치 가능
+- Safari Userscripts에 ESCAPE_PASS_ENGINE.user.js 1개 설치
+- FAST 자동예약 → 대상 예약사이트 → 통합 엔진 자동 시작
+- KEYESCAPE reCAPTCHA / ZEROWORLD 자동등록방지 숫자는 직접 처리
 
-중요
-- 이 앱은 예약 엔진 자체를 PWA 안에서 실행하지 않습니다.
-- '예약페이지 열기'를 누르면 Safari의 해당 사이트가 열리고,
-  Safari Userscripts에 설치한 기존 사이트별 예약 스크립트가 이어서 동작합니다.
-- iOS 보안 구조상 PWA가 다른 사이트의 DOM이나 Userscripts 앱의 설치 상태를 직접 읽을 수 없습니다.
-- PIN은 이 아이폰의 로컬 저장소를 잠그는 개인용 편의 기능입니다.
-  서버 계정/원격 차단 수준의 인증은 아닙니다.
+[Windows PC]
+- 같은 ESCAPE PASS 주소를 Chrome 또는 Edge로 실행
+- PC 와이드 대시보드 자동 적용
+- Tampermonkey에 ESCAPE_PASS_ENGINE.user.js 1개 설치
+- 단일 FAST 예약 실행 가능
+- 예약 플랜 여러 개 저장 후 체크 → '선택 동시 실행'
+- 각 플랜은 새 탭에서 독립적으로 열림
+- 여러 탭이 차단되면 GitHub Pages ESCAPE PASS 주소의 팝업 허용 필요
 
-아이폰 설치 방법
-1. 이 폴더를 HTTPS 웹호스팅에 올립니다.
-   - GitHub Pages / Cloudflare Pages / Netlify 등의 정적 호스팅 사용 가능
-2. Safari에서 배포 주소를 엽니다.
-3. 공유 버튼 → '홈 화면에 추가'
-4. 홈 화면의 ESCAPE PASS 아이콘으로 실행합니다.
-5. 첫 실행 때 4자리 PIN을 만듭니다.
+[중요]
+- 아이폰과 PC의 프로필/플랜은 각각 브라우저 로컬 저장소에 저장됩니다.
+  현재 버전은 서버 동기화를 하지 않습니다.
+- CAPTCHA, 대기열, 서버 접근제어를 우회하지 않습니다.
+- 기존 개별 Userscript는 중복 실행을 피하기 위해 OFF 권장.
+- 실제 예약 성공은 사이트 서버 상태 및 경쟁 상황에 따라 달라집니다.
 
-로컬 테스트
-- PC에서 이 폴더에서:
-  python -m http.server 8080
-- 같은 PC에서 http://localhost:8080 로 테스트할 수 있습니다.
-- iPhone 홈 화면 설치/Service Worker는 HTTPS 배포 주소에서 테스트하는 것을 권장합니다.
+[GitHub Pages 업데이트]
+1. ESCAPE_PASS_v2.1_CROSS_PLATFORM.zip 압축 해제
+2. escape-pass 저장소 루트에서 기존 파일을 v2.1 파일로 교체/업로드
+3. 루트에 다음이 보여야 함:
+   index.html
+   app.js
+   styles.css
+   sw.js
+   manifest.webmanifest
+   icons/
+   userscript/
+4. Settings → Pages는 기존 main / (root) 그대로
+5. 배포 후 페이지 강력 새로고침 또는 홈 화면 앱 완전 종료 후 재실행
 
-사이트 URL
-- KEYESCAPE: https://www.keyescape.com/reservation1.php
-- ZEROWORLD: https://zeroworldkorea.com/layout/res/home.php?go=rev.make&s_subj=A
-- DOOMESCAPE: https://doomescape.com/layout/res/home.php?go=rev.make
-- PLAY33: https://play33.kr/reservation
-- 단편선: https://dpsnnn.com/reserve_g
-- LEDASQUARE: https://ledasquare.com/layout/res/home.php?go=rev.make
-- OASIS MUSEUM: https://oasismuseum.com/ticket
+[PC 통합 엔진 설치]
+1. Chrome 또는 Edge에 Tampermonkey 설치
+2. GitHub Pages에서:
+   /userscript/ESCAPE_PASS_ENGINE.user.js
+   를 열어 Tampermonkey에 설치
+3. 엔진을 ON
+4. 기존 사이트별 스크립트는 OFF
+5. ESCAPE PASS 페이지에서 FAST 자동예약 실행
 
-추천 사용 방식
-- ESCAPE PASS = 홈 화면의 통합 허브/예약 플랜 관리
-- Safari Userscripts = 실제 사이트별 자동예약 엔진
-- 경쟁 예약 때는 Safari가 백그라운드로 내려가지 않도록 해당 예약 탭을 전면에 두는 것이 좋습니다.
+[아이폰 통합 엔진 설치]
+1. Userscripts 앱 사용
+2. ESCAPE_PASS_ENGINE.user.js를 Userscripts 폴더에 저장
+3. 스크립트 ON
+4. Safari의 Userscripts 확장 권한 허용
