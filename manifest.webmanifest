@@ -1,7 +1,7 @@
 {
-  "name": "ESCAPE PASS v2.1",
+  "name": "ESCAPE PASS v2.2",
   "short_name": "ESCAPE PASS",
-  "description": "iPhone과 PC에서 함께 쓰는 개인용 통합 방탈출 자동예약 허브",
+  "description": "iPhone/PC 공용 통합 방탈출 자동예약 허브 - 지점 선택 및 CAPTCHA 흐름 개선",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#07101f",

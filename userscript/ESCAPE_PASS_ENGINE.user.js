@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         ESCAPE PASS ENGINE v2.1 CROSS-PLATFORM
+// @name         ESCAPE PASS ENGINE v2.2 BRANCH + CAPTCHA FLOW
 // @namespace    escape.pass.universal
-// @version      2.1.0
-// @description  ESCAPE PASS와 연결되는 iPhone Safari / Windows Chrome·Edge 공용 통합 자동예약 엔진.
+// @version      2.2.0
+// @description  ESCAPE PASS iPhone/PC 공용 엔진. 지점 선택 연동 및 CAPTCHA 사용자 입력 대기 UX 개선.
 // @match        *://keyescape.com/*
 // @match        *://www.keyescape.com/*
 // @match        *://*.keyescape.com/*
@@ -6220,6 +6220,7 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
 
   async function keyescape(cfg) {
     await waitFor('#__ke_direct_panel');
+    document.querySelector('#__ke_direct_box')?.classList.add('open');
     overlay('KEYESCAPE 설정 수신 · 예약정보 자동입력 중');
 
     await waitOption('#__ke_branch', cfg.branch, 20000);
@@ -6241,13 +6242,17 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
     if(!location.pathname.includes('reservation2.php')){
       overlay(
         'KEYESCAPE 설정 저장 완료.\n' +
-        '사이트에서 STEP2까지 진입한 뒤 reCAPTCHA를 직접 체크하세요.\n' +
-        'STEP2에서 ESCAPE PASS가 자동으로 이어서 시작합니다.'
+        'reCAPTCHA는 KEYESCAPE 사이트 구조상 STEP2에서만 표시됩니다.\n' +
+        'STEP2에 진입하면 ESCAPE PASS가 자동으로 CAPTCHA 대기 상태로 전환됩니다.\n' +
+        'reCAPTCHA를 직접 체크하면 FAST 예약 대기가 자동 시작됩니다.'
       );
+      const box=document.querySelector('#__ke_direct_box');
+      if(box) box.classList.add('open');
       return;
     }
 
-    overlay('KEYESCAPE STEP2 · reCAPTCHA 체크 대기 중');
+    document.querySelector('#__ke_direct_box')?.classList.add('open');
+    overlay('KEYESCAPE STEP2 · reCAPTCHA를 직접 체크해주세요.\n확인되면 FAST 예약 대기가 자동 시작됩니다.');
     const end=Date.now()+6*60*60*1000;
     while(Date.now()<end){
       const token=clean(document.querySelector('textarea[name="g-recaptcha-response"]')?.value ||
@@ -6265,6 +6270,7 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
 
   async function zeroworld(cfg) {
     await waitFor('#zw-panel');
+    document.querySelector('#zw-box')?.classList.add('open');
     overlay('ZEROWORLD 설정 자동입력 중');
 
     if(cfg.branch && /다이브/i.test(cfg.branch)) {
@@ -6283,7 +6289,9 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
     setInput('#zw-people',cfg.people);
     if(cfg.openAt) setInput('#zw-open',cfg.openAt.replace(' ','T'));
 
-    overlay('ZEROWORLD 설정 완료 · 자동등록방지 코드만 직접 입력하세요.');
+    document.querySelector('#zw-box')?.classList.add('open');
+    document.querySelector('#zw-captcha')?.focus();
+    overlay('ZEROWORLD 준비 완료 · 화면의 자동등록방지 숫자를 직접 입력해주세요.\n입력이 확인되면 FAST 예약 대기가 자동 시작됩니다.');
     const end=Date.now()+6*60*60*1000;
     while(Date.now()<end){
       const cap=clean(document.querySelector('#zw-captcha')?.value);

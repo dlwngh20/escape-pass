@@ -1,56 +1,44 @@
-ESCAPE PASS v2.1 CROSS-PLATFORM
-================================
+ESCAPE PASS v2.2 — BRANCH SELECT + CAPTCHA FLOW
+================================================
 
-같은 GitHub Pages 주소를 iPhone과 Windows PC에서 모두 사용할 수 있습니다.
+변경사항
+1. 지점/매장 직접 입력 제거
+   - 모든 지원 사이트에서 ESCAPE PASS 안의 드롭다운 목록으로 선택
+   - KEYESCAPE: 더오름 / 우주라이크 / LOG_IN1 / LOG_IN2 / 메모리컴퍼니 /
+     후즈데어 / STATION / 무비무드 / 강남점 / 부산점 / 전주점 / 홍대점
+   - ZEROWORLD: 김포본점 / 강남점 / 홍대점 / 다이브 건대점
+   - DOOMESCAPE: 1호점 / 2호점 / DTH점(부평) / FEAR점(수원)
+   - PLAY33: 건대점 / 홍대점 / 대전점 / 수원점
+   - 단편선: 강남점
+   - LEDASQUARE: 홍대점
+   - OASIS MUSEUM: 홍대점
 
-[아이폰]
-- Safari에서 ESCAPE PASS 실행
-- 홈 화면 PWA 설치 가능
-- Safari Userscripts에 ESCAPE_PASS_ENGINE.user.js 1개 설치
-- FAST 자동예약 → 대상 예약사이트 → 통합 엔진 자동 시작
-- KEYESCAPE reCAPTCHA / ZEROWORLD 자동등록방지 숫자는 직접 처리
+2. CAPTCHA 흐름 개선
+   ZEROWORLD
+   - ESCAPE PASS에서 FAST 자동예약 시작
+   - 예약페이지 자동 오픈
+   - ZEROWORLD 자동예약 패널 자동 오픈
+   - CAPTCHA 이미지/입력칸 표시
+   - 사용자가 숫자 직접 입력
+   - 입력 확인 즉시 FAST 예약 대기 자동 시작
 
-[Windows PC]
-- 같은 ESCAPE PASS 주소를 Chrome 또는 Edge로 실행
-- PC 와이드 대시보드 자동 적용
-- Tampermonkey에 ESCAPE_PASS_ENGINE.user.js 1개 설치
-- 단일 FAST 예약 실행 가능
-- 예약 플랜 여러 개 저장 후 체크 → '선택 동시 실행'
-- 각 플랜은 새 탭에서 독립적으로 열림
-- 여러 탭이 차단되면 GitHub Pages ESCAPE PASS 주소의 팝업 허용 필요
+   KEYESCAPE
+   - ESCAPE PASS에서 FAST 자동예약 시작
+   - KEYESCAPE 설정 자동 전달 및 패널 자동 오픈
+   - KEYESCAPE의 reCAPTCHA는 사이트 구조상 STEP2에서만 실제 생성됨
+   - STEP2에 진입하면 CAPTCHA 대기 안내 자동 표시
+   - 사용자가 reCAPTCHA 직접 체크
+   - 토큰 확인 즉시 FAST 예약 대기 자동 시작
 
-[중요]
-- 아이폰과 PC의 프로필/플랜은 각각 브라우저 로컬 저장소에 저장됩니다.
-  현재 버전은 서버 동기화를 하지 않습니다.
-- CAPTCHA, 대기열, 서버 접근제어를 우회하지 않습니다.
-- 기존 개별 Userscript는 중복 실행을 피하기 위해 OFF 권장.
-- 실제 예약 성공은 사이트 서버 상태 및 경쟁 상황에 따라 달라집니다.
+중요
+- CAPTCHA는 자동 해독하거나 우회하지 않습니다.
+- KEYESCAPE STEP1에서 가짜 reCAPTCHA를 생성하지 않습니다.
+- 대기열/접근제어/요청제한을 우회하지 않습니다.
+- 실제 예약 성공은 서버 상태/경쟁 상황에 따라 달라질 수 있습니다.
 
-[GitHub Pages 업데이트]
-1. ESCAPE_PASS_v2.1_CROSS_PLATFORM.zip 압축 해제
-2. escape-pass 저장소 루트에서 기존 파일을 v2.1 파일로 교체/업로드
-3. 루트에 다음이 보여야 함:
-   index.html
-   app.js
-   styles.css
-   sw.js
-   manifest.webmanifest
-   icons/
-   userscript/
-4. Settings → Pages는 기존 main / (root) 그대로
-5. 배포 후 페이지 강력 새로고침 또는 홈 화면 앱 완전 종료 후 재실행
-
-[PC 통합 엔진 설치]
-1. Chrome 또는 Edge에 Tampermonkey 설치
-2. GitHub Pages에서:
-   /userscript/ESCAPE_PASS_ENGINE.user.js
-   를 열어 Tampermonkey에 설치
-3. 엔진을 ON
-4. 기존 사이트별 스크립트는 OFF
-5. ESCAPE PASS 페이지에서 FAST 자동예약 실행
-
-[아이폰 통합 엔진 설치]
-1. Userscripts 앱 사용
-2. ESCAPE_PASS_ENGINE.user.js를 Userscripts 폴더에 저장
-3. 스크립트 ON
-4. Safari의 Userscripts 확장 권한 허용
+업데이트
+- GitHub escape-pass 저장소에 v2.2 파일 전체를 덮어올립니다.
+- Pages 설정은 main / (root) 그대로 유지합니다.
+- iPhone Userscripts / PC Tampermonkey의 기존 v2.1 엔진은
+  userscript/ESCAPE_PASS_ENGINE.user.js v2.2로 교체합니다.
+- 기존 사이트별 개별 스크립트는 OFF 권장.

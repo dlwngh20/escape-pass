@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="styles.css">
-<title>ESCAPE PASS v2.1</title>
+<title>ESCAPE PASS v2.2</title>
 </head>
 <body>
 <div class="ambient"></div>
@@ -102,7 +102,7 @@
       <section class="glass engine-card">
         <div class="engine-status">
           <span class="engine-icon">⚡</span>
-          <div><b>ESCAPE PASS ENGINE v2.1</b><p>iPhone Userscripts / PC Tampermonkey 공용</p></div>
+          <div><b>ESCAPE PASS ENGINE v2.2</b><p>iPhone Userscripts / PC Tampermonkey 공용</p></div>
         </div>
         <a href="userscript/ESCAPE_PASS_ENGINE.user.js" class="secondary full-link">통합 엔진 파일 열기</a>
         <div class="engine-guide">
@@ -128,9 +128,10 @@
     <label>예약 사이트<select id="site"></select></label>
     <div id="hint" class="hint"></div>
     <div class="two"><label>예약 날짜<input id="date" type="date"></label><label>희망 시간<input id="time" type="time"></label></div>
-    <label>지점 / 매장<input id="branch" placeholder="지점명"></label>
+    <label>지점 / 매장<select id="branch"></select></label>
     <label>테마<input id="theme" placeholder="테마명"></label>
     <details><summary>고급 설정</summary><label>오픈 시각 (선택)<input id="openAt" type="datetime-local"></label><label>입금자명 (단편선용)<input id="depositor"></label></details>
+    <div id="captchaFlow" class="captcha-flow"></div>
     <div id="profilePreview" class="preview"></div>
     <button id="start" class="primary full">⚡ FAST 자동예약 시작</button>
     <p class="footnote">KEYESCAPE·ZEROWORLD의 CAPTCHA만 직접 처리하면 통합 엔진이 이어서 진행합니다.</p>
@@ -147,7 +148,7 @@
     <label>예약 사이트<select id="planSite"></select></label>
     <div id="planHint" class="hint"></div>
     <div class="two"><label>예약 날짜<input id="planDate" type="date"></label><label>희망 시간<input id="planTime" type="time"></label></div>
-    <label>지점 / 매장<input id="planBranch"></label>
+    <label>지점 / 매장<select id="planBranch"></select></label>
     <label>테마<input id="planTheme"></label>
     <details><summary>고급 설정</summary><label>오픈 시각 (선택)<input id="planOpenAt" type="datetime-local"></label><label>입금자명 (단편선용)<input id="planDepositor"></label></details>
     <label>메모<input id="planMemo" placeholder="예: 20시 오픈 / 최우선"></label>
@@ -157,15 +158,7 @@
 
 <div id="toast" class="toast"></div>
 <script>
-window.ESCAPE_SITES = [
-  {"id":"keyescape","name":"KEYESCAPE","sub":"키이스케이프","url":"https://www.keyescape.com/reservation1.php","accent":"#8b5cf6","badge":"reCAPTCHA","branch":"지점명","theme":"테마명","note":"STEP2에서 reCAPTCHA를 직접 체크하면 자동 시작"},
-  {"id":"zeroworld","name":"ZEROWORLD","sub":"제로월드","url":"https://zeroworldkorea.com/layout/res/home.php?go=rev.make&s_subj=A","accent":"#3b82f6","badge":"CAPTCHA","branch":"지점명","theme":"테마명","note":"자동등록방지 숫자만 직접 입력"},
-  {"id":"doomescape","name":"DOOMESCAPE","sub":"둠이스케이프","url":"https://doomescape.com/layout/res/home.php?go=rev.make","accent":"#ef4444","badge":"AUTO","branch":"지점명","theme":"테마명","note":"설정 수신 후 자동 대기 시작"},
-  {"id":"play33","name":"PLAY33","sub":"플레이33","url":"https://play33.kr/reservation","accent":"#f59e0b","badge":"FAST","branch":"지점명","theme":"테마명","note":"설정 수신 후 FAST 예약 시작"},
-  {"id":"dps","name":"단편선","sub":"강남점","url":"https://dpsnnn.com/reserve_g","accent":"#ec4899","badge":"AUTO","branch":"강남점","theme":"테마명","note":"로그인이 필요하면 로그인 후 자동 이어짐"},
-  {"id":"ledasquare","name":"LEDASQUARE","sub":"레다스퀘어","url":"https://ledasquare.com/layout/res/home.php?go=rev.make","accent":"#06b6d4","badge":"FAST","branch":"홍대점 또는 1","theme":"세진마 / 아바타 / 사진상","note":"레다스퀘어 FAST 엔진 연결"},
-  {"id":"oasis","name":"OASIS MUSEUM","sub":"오아시스뮤지엄","url":"https://oasismuseum.com/ticket","accent":"#22c55e","badge":"FAST · CASH","branch":"홍대점","theme":"업사이드 다운 등","note":"FAST + 현금/무통장 자동신청","branchDefault":"홍대점"}
-];
+window.ESCAPE_SITES = [{"id": "keyescape", "name": "KEYESCAPE", "sub": "키이스케이프", "url": "https://www.keyescape.com/reservation1.php", "accent": "#8b5cf6", "badge": "reCAPTCHA", "branches": ["더오름", "우주라이크", "LOG_IN1", "LOG_IN2", "메모리컴퍼니", "후즈데어", "STATION", "무비무드", "강남점", "부산점", "전주점", "홍대점"], "theme": "테마명", "note": "STEP2에 진입하면 reCAPTCHA가 표시됩니다. 직접 체크하면 FAST 대기가 자동 시작됩니다."}, {"id": "zeroworld", "name": "ZEROWORLD", "sub": "제로월드", "url": "https://zeroworldkorea.com/layout/res/home.php?go=rev.make&s_subj=A", "accent": "#3b82f6", "badge": "CAPTCHA", "branches": ["김포본점", "강남점", "홍대점", "다이브 건대점"], "theme": "테마명", "note": "자동예약 시작 후 예약페이지에서 CAPTCHA 이미지와 입력칸을 자동으로 열어줍니다."}, {"id": "doomescape", "name": "DOOMESCAPE", "sub": "둠이스케이프", "url": "https://doomescape.com/layout/res/home.php?go=rev.make", "accent": "#ef4444", "badge": "AUTO", "branches": ["1호점", "2호점", "DTH점(부평)", "FEAR점(수원)"], "theme": "테마명", "note": "설정 수신 후 자동 대기 시작"}, {"id": "play33", "name": "PLAY33", "sub": "플레이33", "url": "https://play33.kr/reservation", "accent": "#f59e0b", "badge": "FAST", "branches": ["건대점", "홍대점", "대전점", "수원점"], "theme": "테마명", "note": "설정 수신 후 FAST 예약 시작"}, {"id": "dps", "name": "단편선", "sub": "강남점", "url": "https://dpsnnn.com/reserve_g", "accent": "#ec4899", "badge": "AUTO", "branches": ["강남점"], "theme": "상자 / 행복", "note": "강남점 고정 · 로그인이 필요하면 로그인 후 자동 이어짐"}, {"id": "ledasquare", "name": "LEDASQUARE", "sub": "레다스퀘어", "url": "https://ledasquare.com/layout/res/home.php?go=rev.make", "accent": "#06b6d4", "badge": "FAST", "branches": ["홍대점"], "theme": "세진마 / 아바타 / 사진상", "note": "홍대점 FAST 엔진 연결"}, {"id": "oasis", "name": "OASIS MUSEUM", "sub": "오아시스뮤지엄", "url": "https://oasismuseum.com/ticket", "accent": "#22c55e", "badge": "FAST · CASH", "branches": ["홍대점"], "theme": "업사이드 다운 / 미씽 삭스 미스터리 / 배드 타임 / 하이 맥스 / 4 SUM 1", "note": "FAST + 현금/무통장 자동신청"}];
 </script>
 <script src="app.js"></script>
 </body>

@@ -1,6 +1,6 @@
 
-const SITES=window.ESCAPE_SITES||[],KEY='escape_pass_v21';
-const LEGACY_KEYS=['escape_pass_v2','escape_pass_v1'];
+const SITES=window.ESCAPE_SITES||[],KEY='escape_pass_v22';
+const LEGACY_KEYS=['escape_pass_v21','escape_pass_v2','escape_pass_v1'];
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const isDesktop=!isIOS && matchMedia('(min-width:761px)').matches;
@@ -25,6 +25,31 @@ function pad(){const a=['1','2','3','4','5','6','7','8','9','','0','⌫'];$('#pa
 
 function b64u(t){const b=new TextEncoder().encode(t);let s='';b.forEach(x=>s+=String.fromCharCode(x));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 function site(id){return SITES.find(x=>x.id===id)}
+function branchOptions(siteId, selected=''){
+  const s=site(siteId), list=s?.branches||[];
+  const sel = list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  return `<option value="">지점을 선택하세요</option>${sel}`;
+}
+function setBranchSelect(el, siteId, selected=''){
+  const s=site(siteId), list=s?.branches||[];
+  el.innerHTML=branchOptions(siteId, selected);
+  if(selected && list.includes(selected)) el.value=selected;
+  else if(list.length===1) el.value=list[0];
+  else el.value='';
+}
+function captchaFlowFor(siteId){
+  const box=$('#captchaFlow'); if(!box) return;
+  if(siteId==='zeroworld'){
+    box.className='captcha-flow show';
+    box.innerHTML='<b>CAPTCHA 순서</b><br>자동예약 시작 → ZEROWORLD 예약페이지 오픈 → 자동등록방지 이미지/입력칸 자동 표시 → 숫자를 직접 입력 → 입력 확인 즉시 FAST 예약 대기 시작';
+  } else if(siteId==='keyescape'){
+    box.className='captcha-flow show';
+    box.innerHTML='<b>reCAPTCHA 순서</b><br>자동예약 시작 → KEYESCAPE 설정 자동 전달 → STEP2 진입 시 reCAPTCHA 표시 → 직접 체크 → 확인 즉시 FAST 예약 대기 시작<br><small>KEYESCAPE reCAPTCHA는 사이트 구조상 STEP2에서만 생성됩니다.</small>';
+  } else {
+    box.className='captcha-flow';
+    box.innerHTML='';
+  }
+}
 function makePayload(cfg){
   const p=state.data.profile||{};
   return {v:2,runId:crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`,autoStart:true,ts:Date.now(),
@@ -60,12 +85,17 @@ function render(){
 function openBook(id){
   const s=site(id),p=state.data.profile||{};
   $('#site').innerHTML=SITES.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
-  $('#site').value=id||SITES[0].id;$('#date').value='';$('#time').value='';$('#branch').value=s.branchDefault||'';$('#theme').value='';$('#openAt').value='';$('#depositor').value='';
-  updateHint();
+  $('#site').value=id||SITES[0].id;$('#date').value='';$('#time').value='';setBranchSelect($('#branch'),$('#site').value,'');$('#theme').value='';$('#openAt').value='';$('#depositor').value='';
+  updateHint();captchaFlowFor($('#site').value);
   $('#profilePreview').innerHTML=`<b>예약자 프로필</b><br>${esc(p.name||'이름 미설정')} · ${esc(p.phone||'전화번호 미설정')} · ${esc(p.people||'2')}명`;
   $('#bookDialog').showModal()
 }
-function updateHint(){const s=site($('#site').value);if(!s)return;$('#hint').innerHTML=`<b>${esc(s.name)}</b><br>지점: ${esc(s.branch)}<br>테마: ${esc(s.theme)}<br>${esc(s.note)}`;$('#branch').placeholder=s.branch;if(s.branchDefault&&!$('#branch').value)$('#branch').value=s.branchDefault;$('#theme').placeholder=s.theme}
+function updateHint(){
+  const s=site($('#site').value);if(!s)return;
+  $('#hint').innerHTML=`<b>${esc(s.name)}</b><br>지점은 목록에서 선택 · 테마: ${esc(s.theme)}<br>${esc(s.note)}`;
+  $('#theme').placeholder=s.theme;
+  captchaFlowFor(s.id);
+}
 function startSingle(){
   const cfg={site:$('#site').value,date:$('#date').value,time:$('#time').value,branch:$('#branch').value.trim(),theme:$('#theme').value.trim(),openAt:$('#openAt').value||'',depositor:$('#depositor').value.trim()};
   const payload=makePayload(cfg);const m=validatePayload(payload);if(m.length){toast('확인: '+m.join(', '));return}
@@ -75,10 +105,14 @@ function startSingle(){
 function openPlanDialog(plan=null){
   $('#planDialogTitle').textContent=plan?'예약 플랜 수정':'예약 플랜 추가';
   $('#planId').value=plan?.id||'';$('#planSite').value=plan?.site||SITES[0].id;$('#planDate').value=plan?.date||'';$('#planTime').value=plan?.time||'';
-  $('#planBranch').value=plan?.branch||site($('#planSite').value)?.branchDefault||'';$('#planTheme').value=plan?.theme||'';$('#planOpenAt').value=plan?.openAt||'';$('#planDepositor').value=plan?.depositor||'';$('#planMemo').value=plan?.memo||'';
+  setBranchSelect($('#planBranch'),$('#planSite').value,plan?.branch||'');$('#planTheme').value=plan?.theme||'';$('#planOpenAt').value=plan?.openAt||'';$('#planDepositor').value=plan?.depositor||'';$('#planMemo').value=plan?.memo||'';
   updatePlanHint();$('#planDialog').showModal()
 }
-function updatePlanHint(){const s=site($('#planSite').value);if(!s)return;$('#planHint').innerHTML=`<b>${esc(s.name)}</b><br>지점: ${esc(s.branch)} · 테마: ${esc(s.theme)}<br>${esc(s.note)}`;$('#planBranch').placeholder=s.branch;$('#planTheme').placeholder=s.theme;if(s.branchDefault&&!$('#planBranch').value)$('#planBranch').value=s.branchDefault}
+function updatePlanHint(){
+  const s=site($('#planSite').value);if(!s)return;
+  $('#planHint').innerHTML=`<b>${esc(s.name)}</b><br>지점은 목록에서 선택 · 테마: ${esc(s.theme)}<br>${esc(s.note)}`;
+  $('#planTheme').placeholder=s.theme;
+}
 function savePlan(){
   const p={id:$('#planId').value||`${Date.now()}-${Math.random().toString(16).slice(2,7)}`,site:$('#planSite').value,date:$('#planDate').value,time:$('#planTime').value,branch:$('#planBranch').value.trim(),theme:$('#planTheme').value.trim(),openAt:$('#planOpenAt').value||'',depositor:$('#planDepositor').value.trim(),memo:$('#planMemo').value.trim(),selected:true};
   if(!p.date||!p.time||!p.theme){toast('날짜·시간·테마를 확인하세요.');return}
@@ -125,9 +159,9 @@ function installApp(){
 }
 function init(){
   load();pad();
-  $('#lockBtn').onclick=()=>showLock(false);$('#fastBtn').onclick=()=>openBook(state.data.last?.site||SITES[0].id);$('#closeDialog').onclick=()=>$('#bookDialog').close();$('#site').onchange=updateHint;$('#start').onclick=startSingle;
+  $('#lockBtn').onclick=()=>showLock(false);$('#fastBtn').onclick=()=>openBook(state.data.last?.site||SITES[0].id);$('#closeDialog').onclick=()=>$('#bookDialog').close();$('#site').onchange=()=>{setBranchSelect($('#branch'),$('#site').value,'');updateHint()};$('#start').onclick=startSingle;
   $('#saveProfile').onclick=()=>{state.data.profile={name:$('#name').value.trim(),phone:$('#phone').value.trim(),people:$('#people').value};save();render();toast('프로필 저장 완료')};
-  $('#addPlanBtn').onclick=()=>openPlanDialog();$('#closePlanDialog').onclick=()=>$('#planDialog').close();$('#savePlanBtn').onclick=savePlan;$('#planSite').innerHTML=SITES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');$('#planSite').onchange=()=>{const s=site($('#planSite').value);$('#planBranch').value=s?.branchDefault||'';updatePlanHint()};
+  $('#addPlanBtn').onclick=()=>openPlanDialog();$('#closePlanDialog').onclick=()=>$('#planDialog').close();$('#savePlanBtn').onclick=savePlan;$('#planSite').innerHTML=SITES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');$('#planSite').onchange=()=>{setBranchSelect($('#planBranch'),$('#planSite').value,'');updatePlanHint()};
   $('#selectAllBtn').onclick=()=>{const all=state.data.plans.every(x=>x.selected!==false);state.data.plans.forEach(x=>x.selected=!all);save();renderPlans()};
   $('#runSelectedBtn').onclick=runSelected;$('#goPlansBtn').onclick=()=>$('#plansSection').scrollIntoView({behavior:'smooth'});$('#installBtn').onclick=installApp;
   window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstall=e});
