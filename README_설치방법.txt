@@ -1,4 +1,4 @@
-ESCAPE PASS v2.3 — BRANCH + THEME LINKED SELECT
+ESCAPE PASS v2.5 — BRANCH + THEME LINKED SELECT
 ================================================
 
 핵심 변경
@@ -16,8 +16,51 @@ ESCAPE PASS v2.3 — BRANCH + THEME LINKED SELECT
 - 실제 예약사이트에 진입하면 통합 엔진이 해당 사이트의 실제 선택 항목과 다시 매칭
 
 업데이트 방법
-1. ESCAPE_PASS_v2.3_BRANCH_THEME.zip 압축 해제
+1. ESCAPE_PASS_v2.5_BRANCH_THEME.zip 압축 해제
 2. GitHub escape-pass 저장소 루트에 전체 파일 덮어쓰기
 3. Pages 설정(main / root)은 그대로
-4. 아이폰 Userscripts / PC Tampermonkey 엔진도 v2.3으로 교체
+4. 아이폰 Userscripts / PC Tampermonkey 엔진도 v2.5으로 교체
 5. 기존 v2.2 엔진 및 개별 사이트 스크립트는 OFF 권장
+
+
+KEYESCAPE v2.5 오픈런 타이밍
+- 설정 오픈시각 기준 300ms 전부터 첫 시간조회 시작
+- 오픈 직전 ~ 오픈 후 0.9초: 목표 80ms 순차 확인
+- 오픈 후 0.9~3초: 180ms 순차 확인
+- 이후: 450ms 순차 확인
+- 동시 요청 없음
+- HTTP 403 / 429 / 요청 제한 감지 시 즉시 중지
+- iPhone Safari 스케줄링/네트워크/서버 Date 정밀도 때문에 정확히 1ms 단위 실행을 보장하지 않음
+
+
+전체 사이트 공통 오픈런 정책 (v2.5)
+- KEYESCAPE / ZEROWORLD / DOOMESCAPE / PLAY33 / 단편선 / LEDASQUARE / OASIS MUSEUM
+- 오픈 300ms 전부터 선행 확인 시작
+- 오픈 직전 ~ 오픈 후 0.9초: 목표 80ms 순차 확인
+- 오픈 후 0.9초 ~ 3초: 목표 180ms 순차 확인
+- 이후: 목표 450ms 순차 확인
+- 동시 요청 없음
+- 이전 요청/페이지 갱신이 끝나야 다음 확인
+- HTTP 403/429/요청 제한 감지 시 중지
+- 단편선은 전체 페이지 갱신 구조라 실제 주기는 페이지 로딩시간보다 짧아질 수 없음
+
+
+[DOOMESCAPE v2.6 RESILIENT]
+- 오픈 300ms 전부터 순차 확인
+- 오픈 직전~+0.9초 목표 80ms 주기
+- 서버가 정상 응답하면 즉시 슬롯 파싱 → STEP2 화면 생략 → 실제 rev.act.php 정상 form POST
+- 같은 세션에서 슬롯 감지 후 선점 POST는 1회만 실행
+- 예약 슬롯 GET이 5xx/timeout이면 세션을 버리지 않고 짧은 백오프 후 복구
+- 403/429/rate limit은 즉시 중단
+- 백그라운드 warm-up 요청을 남기지 않고 순차 1회만 수행
+- 서버가 완전히 다운되거나 다른 예약자가 먼저 선점한 경우 성공을 보장할 수 없음
+
+
+[ALL-SITE v2.7 DIAGNOSTIC]
+- KEYESCAPE / ZEROWORLD / DOOMESCAPE / PLAY33 / DPS / LEDASQUARE / OASIS 모두 공통 진단 로그를 기록합니다.
+- 좌측 하단의 `🧪 LOG` 버튼에서 최근 로그 확인 / 로그 복사 / JSON 저장 / 초기화가 가능합니다.
+- 기록 항목: 오픈 기준 상대시간(ms), 네트워크 요청 응답시간, HTTP 상태, 폼 전송 경계, 엔진 상태, JS 오류, 화면 이탈/백그라운드 전환.
+- 고속 폴링의 각 네트워크 요청은 메모리 로그에 기록하고, localStorage에는 지연 저장하여 진단 오버헤드를 줄였습니다.
+- 요청/응답 본문은 저장하지 않으며 전화번호, 이메일, 토큰 계열 값은 자동 마스킹합니다.
+- 실패 후 `🧪 LOG → 로그 복사` 내용을 ChatGPT에 보내면 슬롯 발견 지연 / 서버 응답 지연 / 5xx / 403·429 / 전송 단계 등을 비교 분석할 수 있습니다.
+- 실제 예약 성공은 서버 상태와 다른 예약자의 선점에 따라 보장할 수 없습니다.

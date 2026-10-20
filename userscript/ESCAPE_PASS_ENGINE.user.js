@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         ESCAPE PASS ENGINE v2.3 BRANCH + THEME
+// @name         ESCAPE PASS ENGINE v2.7 ALL-SITE DIAGNOSTIC
 // @namespace    escape.pass.universal
-// @version      2.3.0
-// @description  ESCAPE PASS iPhone/PC 공용 엔진. 사이트/지점/테마 연동 선택 및 CAPTCHA 사용자 입력 흐름.
+// @version      2.7.0
+// @description  ESCAPE PASS 공용 엔진. 기존 예약 로직 유지 + 전 사이트 공통 밀리초 진단 로그 + DOOM 복구 강화.
 // @match        *://keyescape.com/*
 // @match        *://www.keyescape.com/*
 // @match        *://*.keyescape.com/*
@@ -21,6 +21,288 @@
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
+
+// -----------------------------------------------------------------------------
+// ESCAPE PASS v2.7 common diagnostics
+// - Same diagnostic format on all supported sites.
+// - Keeps hot-path logging in memory; localStorage is flushed lazily/pagehide so
+//   diagnostics do not add synchronous storage work to every polling request.
+// - Never records request/response bodies. Phone/email/token-like values are redacted.
+// -----------------------------------------------------------------------------
+(() => {
+  'use strict';
+  if (window.__EP_DIAG__) return;
+
+  const DIAG_VERSION = '2.7.0';
+  const STORAGE_KEY = '__escape_pass_diag_v27__';
+  const MAX_EVENTS = 900;
+  const START_IDS = new Set(['__ke_start','zw-start','__doom_start','p33-start','dps-start','leda-start','__oasis_start']);
+  const STATUS_IDS = ['__ke_direct_status','zw-status','__doom_status','p33-status','dps-fast-status','__oasis_status'];
+  const host = location.hostname.toLowerCase();
+  const site = host.includes('keyescape') ? 'KEYESCAPE' :
+               host.includes('zeroworld') ? 'ZEROWORLD' :
+               host.includes('doomescape') ? 'DOOMESCAPE' :
+               host.includes('play33') ? 'PLAY33' :
+               host.includes('dpsnnn') ? 'DPS' :
+               host.includes('ledasquare') ? 'LEDASQUARE' :
+               host.includes('oasismuseum') ? 'OASIS' : host;
+
+  let events = [];
+  let sessionId = '';
+  let openMs = NaN;
+  let dirty = false;
+  let flushTimer = null;
+  let netSeq = 0;
+  let lastBadgePaint = 0;
+  const observed = new WeakSet();
+
+  function nowIso(ms=Date.now()) { try { return new Date(ms).toISOString(); } catch { return ''; } }
+  function makeSessionId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`; }
+  function sanitizeText(value) {
+    let s = String(value ?? '');
+    s = s.replace(/\b01[016789][\s.-]?\d{3,4}[\s.-]?\d{4}\b/g, '[PHONE]');
+    s = s.replace(/\b\d{10,11}\b/g, '[PHONE]');
+    s = s.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]');
+    s = s.replace(/((?:token|csrf|ck_code|captcha|g-recaptcha-response|password|passwd|secret)\s*[=:]\s*)[^\s,&]+/gi, '$1[REDACTED]');
+    // LEDA's preparation line may contain name / phone / people. Keep only the stage.
+    if (/^\[준비\].*\/.*명/.test(s)) s = '[준비] 예약자 입력값 준비 완료';
+    if (/^\[전화검증\]/.test(s)) s = '[전화검증] 전화번호 필드 구성 확인';
+    return s.slice(0, 900);
+  }
+  function safeUrl(raw) {
+    try {
+      const u = new URL(String(raw || ''), location.href);
+      const keys = [...u.searchParams.keys()].filter((v,i,a)=>a.indexOf(v)===i).sort();
+      return sanitizeText(u.pathname + (keys.length ? '?' + keys.join('&') : ''));
+    } catch { return sanitizeText(String(raw || '').split('?')[0]); }
+  }
+  function relativeAt(ms=Date.now()) {
+    return Number.isFinite(openMs) ? Math.round(ms - openMs) : null;
+  }
+  function paintBadgeSoon() {
+    const now = performance.now();
+    if (now-lastBadgePaint < 250) return;
+    lastBadgePaint = now;
+    const b = document.getElementById('__ep_diag_btn');
+    if (b) b.textContent = `🧪 LOG ${events.length}`;
+  }
+  function scheduleFlush() {
+    dirty = true;
+    if (flushTimer) return;
+    flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 2500);
+  }
+  function flush() {
+    if (!dirty) return;
+    dirty = false;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({v:DIAG_VERSION,site,sessionId,openMs:Number.isFinite(openMs)?openMs:null,events}));
+    } catch (_) {}
+  }
+  function restore() {
+    try {
+      const x = JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
+      if (x && x.v===DIAG_VERSION && x.site===site && Array.isArray(x.events)) {
+        events = x.events.slice(-MAX_EVENTS);
+        sessionId = String(x.sessionId||'');
+        if (Number.isFinite(Number(x.openMs))) openMs = Number(x.openMs);
+      }
+    } catch (_) {}
+    if (!sessionId) sessionId = makeSessionId();
+  }
+  function mark(kind, message, data={}) {
+    const wall = Date.now();
+    const e = {
+      i: events.length ? Number(events[events.length-1].i||0)+1 : 1,
+      wall,
+      rel: relativeAt(wall),
+      kind: sanitizeText(kind),
+      msg: sanitizeText(message),
+      data: {}
+    };
+    for (const [k,v] of Object.entries(data||{})) {
+      if (v == null) continue;
+      if (typeof v === 'number' || typeof v === 'boolean') e.data[k]=v;
+      else e.data[k]=sanitizeText(v);
+    }
+    events.push(e);
+    if (events.length > MAX_EVENTS) events.splice(0, events.length-MAX_EVENTS);
+    scheduleFlush();
+    paintBadgeSoon();
+    return e;
+  }
+  function setOpenMs(ms) {
+    ms = Number(ms);
+    if (!Number.isFinite(ms)) return;
+    const changed = !Number.isFinite(openMs) || Math.abs(openMs-ms) > 2;
+    openMs = ms;
+    if (changed) mark('CLOCK','오픈 기준시각 설정',{openAt:nowIso(ms)});
+  }
+  function reset(reason='예약 시작') {
+    events = [];
+    sessionId = makeSessionId();
+    openMs = NaN;
+    netSeq = 0;
+    mark('SESSION',reason,{site,href:safeUrl(location.href)});
+    flush();
+  }
+  function state(message) {
+    const msg = sanitizeText(message);
+    if (!msg) return;
+    // Countdown text changes too frequently and is not useful for root-cause analysis.
+    if (/오픈까지\s*[\d.]+초|서버시간 기준 대기|대기 중.*오픈 예정/i.test(msg)) return;
+    mark('STATE',msg);
+  }
+  function exportObject() {
+    return {
+      diagnosticVersion:DIAG_VERSION,
+      site,
+      sessionId,
+      exportedAt:nowIso(),
+      openAt:Number.isFinite(openMs)?nowIso(openMs):null,
+      environment:{
+        userAgent:sanitizeText(navigator.userAgent||''),
+        visibility:document.visibilityState,
+        connection:navigator.connection ? {
+          effectiveType:navigator.connection.effectiveType||'',
+          rtt:Number(navigator.connection.rtt||0),
+          downlink:Number(navigator.connection.downlink||0),
+          saveData:!!navigator.connection.saveData
+        } : null
+      },
+      events
+    };
+  }
+  function exportText() {
+    const o=exportObject();
+    const head=[
+      `ESCAPE PASS DIAGNOSTIC v${DIAG_VERSION}`,
+      `SITE=${site}`,
+      `SESSION=${sessionId}`,
+      `OPEN=${o.openAt||'-'}`,
+      `EXPORTED=${o.exportedAt}`,
+      `UA=${o.environment.userAgent}`,
+      '---'
+    ];
+    const rows=events.map(e=>{
+      const rel=e.rel==null?'n/a':`${e.rel>=0?'+':''}${e.rel}ms`;
+      const data=Object.keys(e.data||{}).length?' '+JSON.stringify(e.data):'';
+      return `${String(e.i).padStart(4,'0')} ${nowIso(e.wall)} [${rel}] [${e.kind}] ${e.msg}${data}`;
+    });
+    return head.concat(rows).join('\n');
+  }
+  async function copyLog() {
+    const t=exportText();
+    try { await navigator.clipboard.writeText(t); mark('DIAG','진단 로그 복사 완료'); return true; }
+    catch (_) { try { prompt('진단 로그를 복사해주세요.',t); return true; } catch { return false; } }
+  }
+  function downloadLog() {
+    try {
+      flush();
+      const blob=new Blob([JSON.stringify(exportObject(),null,2)],{type:'application/json;charset=utf-8'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=`escape-pass-diag-${site.toLowerCase()}-${Date.now()}.json`;
+      document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+      mark('DIAG','JSON 로그 저장 실행');
+    } catch (e) { mark('DIAG_ERR','JSON 로그 저장 실패',{error:String(e?.message||e)}); }
+  }
+  function clearLog() { reset('사용자 로그 초기화'); renderPanel(); }
+
+  function renderPanel() {
+    const body=document.getElementById('__ep_diag_body');
+    if (!body) return;
+    const recent=events.slice(-28).map(e=>{
+      const rel=e.rel==null?'':` ${e.rel>=0?'+':''}${e.rel}ms`;
+      return `${String(e.i).padStart(3,'0')} ${rel} [${e.kind}] ${e.msg}`;
+    }).join('\n');
+    body.textContent=recent||'아직 기록된 로그가 없습니다.';
+    const meta=document.getElementById('__ep_diag_meta');
+    if(meta) meta.textContent=`${site} · ${events.length}건 · 오픈기준 ${Number.isFinite(openMs)?new Date(openMs).toLocaleString():'미설정'}`;
+  }
+  function makeUi() {
+    if (!document.body || document.getElementById('__ep_diag_btn')) return;
+    const btn=document.createElement('button');
+    btn.id='__ep_diag_btn';btn.type='button';btn.textContent=`🧪 LOG ${events.length}`;
+    btn.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;border:0;border-radius:999px;padding:8px 10px;background:#202124;color:#fff;font:700 11px -apple-system,BlinkMacSystemFont,sans-serif;box-shadow:0 3px 14px #0005;opacity:.9';
+    const panel=document.createElement('div');
+    panel.id='__ep_diag_panel';panel.style.cssText='display:none;position:fixed;left:8px;right:8px;bottom:48px;z-index:2147483647;max-width:720px;max-height:55vh;overflow:auto;padding:12px;border-radius:14px;background:#111;color:#fff;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;box-shadow:0 8px 30px #0008';
+    panel.innerHTML='<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>ESCAPE PASS 진단 로그 v2.7</b><span id="__ep_diag_meta"></span></div><pre id="__ep_diag_body" style="white-space:pre-wrap;word-break:break-word;background:#1d1d1f;padding:9px;border-radius:9px;max-height:35vh;overflow:auto"></pre><div style="display:flex;gap:6px;flex-wrap:wrap"><button id="__ep_diag_copy" type="button">로그 복사</button><button id="__ep_diag_save" type="button">JSON 저장</button><button id="__ep_diag_clear" type="button">초기화</button><button id="__ep_diag_close" type="button">닫기</button></div><div style="margin-top:7px;color:#bbb">요청/응답 본문은 저장하지 않으며 전화번호·토큰 계열 값은 자동 마스킹합니다.</div>';
+    document.body.appendChild(btn);document.body.appendChild(panel);
+    for(const b of panel.querySelectorAll('button')) b.style.cssText='border:0;border-radius:8px;padding:7px 10px;font-weight:700';
+    btn.onclick=()=>{panel.style.display=panel.style.display==='none'?'block':'none';renderPanel()};
+    panel.querySelector('#__ep_diag_copy').onclick=()=>copyLog();
+    panel.querySelector('#__ep_diag_save').onclick=()=>downloadLog();
+    panel.querySelector('#__ep_diag_clear').onclick=()=>clearLog();
+    panel.querySelector('#__ep_diag_close').onclick=()=>panel.style.display='none';
+  }
+
+  // fetch instrumentation. Hot-path records are kept in memory; no body cloning/parsing.
+  const nativeFetch=window.fetch?.bind(window);
+  if(nativeFetch){
+    window.fetch=async function(input,init){
+      const seq=++netSeq;
+      let method='GET', raw='';
+      try { raw=typeof input==='string'?input:(input?.url||''); method=String(init?.method||input?.method||'GET').toUpperCase(); } catch (_) {}
+      const t0=performance.now(), wall0=Date.now();
+      try{
+        const res=await nativeFetch(input,init);
+        const dur=Math.round((performance.now()-t0)*10)/10;
+        mark('NET',`${method} ${safeUrl(raw)} → HTTP ${res.status}`,{seq,durationMs:dur,startRelMs:relativeAt(wall0)});
+        return res;
+      }catch(e){
+        const dur=Math.round((performance.now()-t0)*10)/10;
+        mark('NET_ERR',`${method} ${safeUrl(raw)} 실패`,{seq,durationMs:dur,startRelMs:relativeAt(wall0),error:String(e?.name||e?.message||e)});
+        throw e;
+      }
+    };
+  }
+
+  // XHR instrumentation for site-native AJAX flows.
+  try{
+    const XO=XMLHttpRequest.prototype.open, XS=XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open=function(method,url,...rest){this.__epdiag={method:String(method||'GET').toUpperCase(),url:String(url||'')};return XO.call(this,method,url,...rest)};
+    XMLHttpRequest.prototype.send=function(body){
+      const meta=this.__epdiag||{method:'GET',url:''};const t0=performance.now(), wall0=Date.now();
+      const done=()=>{try{const seq=++netSeq,dur=Math.round((performance.now()-t0)*10)/10,status=Number(this.status||0);mark('XHR',`${meta.method} ${safeUrl(meta.url)} → HTTP ${status}`,{seq,durationMs:dur,startRelMs:relativeAt(wall0)})}catch{}};
+      this.addEventListener('loadend',done,{once:true});
+      return XS.call(this,body);
+    };
+  }catch(_){}
+
+  // Log real form submission boundaries without recording field values.
+  try{
+    const nativeSubmit=HTMLFormElement.prototype.submit;
+    HTMLFormElement.prototype.submit=function(...args){mark('FORM_SUBMIT',`${String(this.method||'GET').toUpperCase()} ${safeUrl(this.action||location.href)}`);flush();return nativeSubmit.apply(this,args)};
+    document.addEventListener('submit',e=>{const f=e.target;if(f instanceof HTMLFormElement)mark('FORM_EVENT',`${String(f.method||'GET').toUpperCase()} ${safeUrl(f.action||location.href)}`)},true);
+  }catch(_){}
+
+  document.addEventListener('click',e=>{
+    const el=e.target?.closest?.('button,a,input');
+    if(!el) return;
+    if(START_IDS.has(el.id)){reset('예약 대기 시작');mark('ACTION',`START ${el.id}`)}
+  },true);
+
+  function attachStatusObservers(){
+    for(const id of STATUS_IDS){
+      const el=document.getElementById(id);if(!el||observed.has(el))continue;observed.add(el);
+      let prev='';
+      const take=()=>{const t=sanitizeText(el.textContent||'').trim();if(!t||t===prev)return;prev=t;state(t)};
+      new MutationObserver(take).observe(el,{childList:true,subtree:true,characterData:true});take();
+    }
+  }
+
+  window.addEventListener('error',e=>mark('JS_ERR',String(e.message||'script error'),{file:safeUrl(e.filename||''),line:Number(e.lineno||0)}));
+  window.addEventListener('unhandledrejection',e=>mark('PROMISE_ERR',String(e.reason?.message||e.reason||'unhandled rejection')));
+  window.addEventListener('pagehide',()=>{mark('PAGE','pagehide',{href:safeUrl(location.href)});flush()});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')mark('PAGE',`visibility=${document.visibilityState}`)});
+
+  restore();
+  window.__EP_DIAG__={version:DIAG_VERSION,site,mark,state,setOpenMs,reset,flush,copyLog,downloadLog,exportText,exportObject};
+  mark('PAGE','진단 모듈 로드',{href:safeUrl(location.href)});
+  const boot=()=>{makeUi();attachStatusObservers();let n=0;const t=setInterval(()=>{attachStatusObservers();if(++n>=25)clearInterval(t)},600)};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();
+
 
 if (/(^|\.)keyescape\.com$/i.test(location.hostname)) {
   try {
@@ -135,6 +417,7 @@ if (/(^|\.)keyescape\.com$/i.test(location.hostname)) {
 
   function status(msg) {
     console.log('[KEY DIRECT]', msg);
+    window.__EP_DIAG__?.state(msg);
     const el = document.getElementById('__ke_direct_status');
     if (el) el.textContent = msg;
   }
@@ -1094,10 +1377,33 @@ if (/(^|\.)keyescape\.com$/i.test(location.hostname)) {
     return result;
   }
 
+  // KEYESCAPE 오픈런 타이밍
+  // - 정각 300ms 전부터 첫 확인
+  // - 오픈 직전 ~ 오픈 후 0.9초: 목표 80ms 주기
+  // - 반드시 순차 요청: 이전 요청이 끝나기 전 다음 요청을 보내지 않음
+  // - 응답 자체가 80ms보다 느리면 추가 대기 없이 다음 1회만 진행 (동시/누적 요청 없음)
+  const KEY_PREOPEN_START_MS = 300;
+  const KEY_TIGHT_END_AFTER_MS = 900;
+  const KEY_TIGHT_CYCLE_MS = 80;
+  const KEY_WARM_END_AFTER_MS = 3000;
+  const KEY_WARM_CYCLE_MS = 180;
+  const KEY_NORMAL_CYCLE_MS = 450;
+
   async function burst(cfg) {
     const started = serverNow();
+    const configuredOpenMs = new Date(cfg.openAt).getTime();
+    window.__EP_DIAG__?.setOpenMs(configuredOpenMs);
     let attempt = 0;
-    status('오픈 도달 → 목표 시간 서버 직접조회 시작');
+
+    const initialRel = Number.isFinite(configuredOpenMs)
+      ? serverNow() - configuredOpenMs
+      : 0;
+
+    status(
+      Number.isFinite(configuredOpenMs)
+        ? `KEY 선행조회 시작 · 오픈 대비 ${initialRel}ms\n순차 80ms 모드`
+        : '목표 시간 서버 직접조회 시작'
+    );
 
     while (!stopped && load().armed) {
       attempt++;
@@ -1118,23 +1424,45 @@ if (/(^|\.)keyescape\.com$/i.test(location.hostname)) {
         }
 
         if (attempt === 1 || attempt % 10 === 0) {
-          status(`시간조회 ${attempt}회 · 아직 미오픈/슬롯 미검출\n${clean(r.msg).slice(0,90)}`);
+          const rel = Number.isFinite(configuredOpenMs)
+            ? serverNow() - configuredOpenMs
+            : serverNow() - started;
+          status(
+            `시간조회 ${attempt}회 · ${rel >= 0 ? '+' : ''}${Math.round(rel)}ms\n` +
+            `${clean(r.msg).slice(0,90)}`
+          );
         }
       } catch (e) {
         const msg = String(e?.message || e);
-        if (/403|429|요청 제한|reCAPTCHA|예약 서버가 실패/.test(msg)) {
+
+        // 요청 제한/접근 제한은 더 밀어붙이지 않고 즉시 중지.
+        if (/403|429|요청 제한|rate.?limit/i.test(msg)) {
+          save({armed:false});
+          status(`⚠️ 서버 요청 제한 감지 · 자동 중지\n${msg}`);
+          throw e;
+        }
+        if (/reCAPTCHA|예약 서버가 실패/.test(msg)) {
           save({armed:false});
           throw e;
         }
-        if (attempt === 1 || attempt % 8 === 0) status(`조회 ${attempt}회 · ${msg.slice(0,90)}`);
+        if (attempt === 1 || attempt % 8 === 0) {
+          status(`조회 ${attempt}회 · ${msg.slice(0,90)}`);
+        }
       }
 
-      const elapsed = serverNow()-started;
-      // 서버 응답이 돌아온 뒤 다음 요청을 보내는 순차 폴링.
-      // 정각 첫 2.5초만 촘촘하게, 이후 완화.
-      let gap = elapsed < 2500 ? 55 : elapsed < 8000 ? 140 : 450;
-      const used = performance.now()-cycle;
-      if (used < gap) await sleep(gap-used);
+      const rel = Number.isFinite(configuredOpenMs)
+        ? serverNow() - configuredOpenMs
+        : serverNow() - started;
+
+      let gap;
+      if (rel <= KEY_TIGHT_END_AFTER_MS) gap = KEY_TIGHT_CYCLE_MS;
+      else if (rel <= KEY_WARM_END_AFTER_MS) gap = KEY_WARM_CYCLE_MS;
+      else gap = KEY_NORMAL_CYCLE_MS;
+
+      // 순차 폴링: 실제 요청시간을 포함한 "한 사이클" 기준.
+      // 요청이 80ms 이상 걸렸다면 별도 대기 없이 다음 1회만 진행한다.
+      const used = performance.now() - cycle;
+      if (used < gap) await sleep(gap - used);
     }
   }
 
@@ -1173,8 +1501,12 @@ if (/(^|\.)keyescape\.com$/i.test(location.hostname)) {
         remain = target-serverNow();
       }
 
-      if (remain <= 0) {
-        status(`서버시간 오픈 도달\n보정 ${clockOffset>=0?'+':''}${clockOffset}ms`);
+      if (remain <= KEY_PREOPEN_START_MS) {
+        status(
+          `KEYESCAPE 선행 시작\n` +
+          `오픈 ${KEY_PREOPEN_START_MS}ms 전부터 순차 ${KEY_TIGHT_CYCLE_MS}ms 확인\n` +
+          `보정 ${clockOffset>=0?'+':''}${clockOffset}ms`
+        );
         try { await burst(cfg); }
         catch (e) {
           save({armed:false});
@@ -1693,6 +2025,7 @@ if (/(^|\.)zeroworldkorea\.com$/i.test(location.hostname)) {
   }
 
   function status(msg) {
+    window.__EP_DIAG__?.state(msg);
     const el = document.getElementById('zw-status');
     if (el) el.textContent = msg;
     console.log('[ZEROWORLD FAST]', msg);
@@ -2182,107 +2515,67 @@ if (/(^|\.)zeroworldkorea\.com$/i.test(location.hostname)) {
     }
   }
 
+  // 공통 오픈런 정책: -300ms 시작 / +0.9s까지 80ms / +3s까지 180ms / 이후 450ms.
   async function burst(cfg, captcha) {
-    const begin = serverNowMs();
-    let won = false;
-    let stoppedByLimit = false;
-    let totalAttempts = 0;
-    const activeControllers = new Set();
+    const openMs = new Date(cfg.openAt).getTime();
+    window.__EP_DIAG__?.setOpenMs(openMs);
+    let attempt = 0;
 
     status(
-      '오픈 감지 시작 → 혼잡 대응 시간조회\n' +
-      '최대 2개 워커 · DIRECT 선점은 1회만 전송'
+      '오픈 선행조회 시작 → 목표 시간 순차 확인\n' +
+      '동시 요청 없음 · 제한 응답 시 즉시 중지'
     );
 
-    const abortAll = () => {
-      for (const c of activeControllers) {
-        try { c?.abort(); } catch {}
-      }
-      activeControllers.clear();
-    };
+    while (loadCfg().armed) {
+      attempt++;
+      const cycle = performance.now();
 
-    const worker = async (workerId, initialDelayMs) => {
-      if (initialDelayMs > 0) await sleep(initialDelayMs);
-
-      let localAttempts = 0;
-      while (loadCfg().armed && !won && !stoppedByLimit) {
-        localAttempts++;
-        totalAttempts++;
-        const reqStart = performance.now();
+      try {
         const controller = makeAbortController();
-        if (controller) activeControllers.add(controller);
+        const found = await fetchTargetTimeWithTimeout(cfg, 5000, controller);
+        const rtt = Math.round(performance.now() - cycle);
 
-        try {
-          // 서버가 순간적으로 느려도 즉시 포기하지 않고 최대 5초까지 응답을 기다린다.
-          // 동시에 살아있는 시간조회 요청은 워커당 1개, 전체 최대 2개.
-          const found = await fetchTargetTimeWithTimeout(cfg, 5000, controller);
-          const rtt = Math.round(performance.now() - reqStart);
+        if (!loadCfg().armed) return;
 
-          if (controller) activeControllers.delete(controller);
-          if (won || stoppedByLimit || !loadCfg().armed) return;
-
-          if (found) {
-            won = true;
-            abortAll();
-            status(
-              `${cfg.targetTime} 감지 · time_num=${found.timeNum}\n` +
-              `워커 ${workerId} 응답 ${rtt}ms → DIRECT 선점 POST`
-            );
-            directHoldNavigate(cfg, captcha, found.timeNum);
-            return;
-          }
-
-          if (localAttempts === 1 || localAttempts % 5 === 0) {
-            status(
-              `혼잡 대응 조회 ${totalAttempts}회\n` +
-              `워커 ${workerId} 최근 응답 ${rtt}ms · 아직 미오픈/마감`
-            );
-          }
-        } catch (e) {
-          if (controller) activeControllers.delete(controller);
-          const msg = String(e?.message || e);
-
-          if (/403|429|요청 제한/.test(msg)) {
-            stoppedByLimit = true;
-            saveCfg({armed:false});
-            abortAll();
-            throw e;
-          }
-
-          // AbortError는 서버 지연으로 5초 timeout된 경우. 다른 워커/다음 회차로 이어간다.
-          if (localAttempts === 1 || localAttempts % 4 === 0) {
-            status(
-              `혼잡 대응 조회 ${totalAttempts}회\n` +
-              `워커 ${workerId}: ${msg.includes('Abort') ? '응답 지연(5초 초과)' : msg.slice(0,80)}`
-            );
-          }
+        if (found) {
+          status(
+            `${cfg.targetTime} 감지 · time_num=${found.timeNum}\n` +
+            `응답 ${rtt}ms → DIRECT 선점 POST`
+          );
+          directHoldNavigate(cfg, captcha, found.timeNum);
+          return;
         }
 
-        if (won || stoppedByLimit || !loadCfg().armed) return;
-
-        const since = serverNowMs() - begin;
-        // 기존 40ms 연타보다 요청량을 크게 낮추되 2개 워커로 '한 요청이 대기열에 묶이는' 위험을 분산.
-        // 워커 각각 순차 요청만 하므로 동시 시간조회는 최대 2개.
-        const gap = since < 4000 ? 260 : since < 12000 ? 500 : 900;
-        await sleep(gap);
+        if (attempt === 1 || attempt % 10 === 0) {
+          const rel = Number.isFinite(openMs) ? serverNowMs() - openMs : 0;
+          status(
+            `시간조회 ${attempt}회 · ${rel >= 0 ? '+' : ''}${Math.round(rel)}ms\n` +
+            `최근 응답 ${rtt}ms · 아직 미오픈/마감`
+          );
+        }
+      } catch (e) {
+        const msg = String(e?.message || e);
+        if (/403|429|요청 제한|rate.?limit/i.test(msg)) {
+          saveCfg({armed:false});
+          status(`❌ ${msg}\n서버 제한 감지 → 자동 중지`);
+          throw e;
+        }
+        if (attempt === 1 || attempt % 8 === 0) status(`조회 ${attempt}회 · ${msg.slice(0,90)}`);
       }
-    };
 
-    try {
-      // A는 오픈 즉시, B는 650ms 뒤 시작.
-      // 서버가 한 요청을 오래 붙잡아도 다른 워커가 별도 응답 기회를 가짐.
-      await Promise.all([
-        worker('A', 0),
-        worker('B', 650)
-      ]);
-    } finally {
-      abortAll();
+      if (!loadCfg().armed) return;
+
+      const rel = Number.isFinite(openMs) ? serverNowMs() - openMs : 0;
+      const gap = rel <= 900 ? 80 : rel <= 3000 ? 180 : 450;
+      const used = performance.now() - cycle;
+      if (used < gap) await sleep(gap - used);
     }
   }
 
   let timer = null;
   async function waitForOpen(cfg, captcha) {
     const openMs = new Date(cfg.openAt).getTime();
+    window.__EP_DIAG__?.setOpenMs(openMs);
     if (!Number.isFinite(openMs)) {
       status('오픈시각 미입력 → 즉시 시간 조회 시작');
       return burst(cfg, captcha);
@@ -2640,7 +2933,7 @@ const norm=s=>clean(s).replace(/\s+/g,'').toLowerCase();
 function load(){try{return {...DEFAULTS,...JSON.parse(localStorage.getItem(STORE)||'{}')}}catch{return {...DEFAULTS}}}
 function save(p={}){const v={...load(),...p};localStorage.setItem(STORE,JSON.stringify(v));return v}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function status(s){console.log('[DOOM HYBRID]',s);const e=document.getElementById('__doom_status');if(e)e.textContent=s}
+function status(s){console.log('[DOOM HYBRID]',s);window.__EP_DIAG__?.state(s);const e=document.getElementById('__doom_status');if(e)e.textContent=s}
 
 function banner(kind,title,detail=''){
   let b=document.getElementById('__doom_result');
@@ -2683,11 +2976,26 @@ function refreshAuto(show=true){
   else if(note){note.style.color='#a45100';note.textContent='지점과 목표 날짜를 선택하면 오픈 시각을 자동 계산합니다.'}
 }
 
-async function getText(url){
-  const r=await fetch(url,{credentials:'include',cache:'no-store',headers:{'Cache-Control':'no-cache, no-store, max-age=0','Pragma':'no-cache'}});
-  if(r.status===403||r.status===429)throw new Error(`요청 제한 HTTP ${r.status}`);
-  if(!r.ok)throw new Error(`HTTP ${r.status}`);
-  return {text:await r.text(),response:r};
+async function getText(url,timeoutMs=8000){
+  const ctl=new AbortController();
+  const timer=setTimeout(()=>ctl.abort(),Math.max(500,timeoutMs));
+  try{
+    const r=await fetch(url,{
+      credentials:'include',
+      cache:'no-store',
+      signal:ctl.signal,
+      headers:{'Cache-Control':'no-cache, no-store, max-age=0','Pragma':'no-cache'}
+    });
+    if(r.status===403||r.status===429)throw new Error(`요청 제한 HTTP ${r.status}`);
+    if([500,502,503,504].includes(r.status))throw new Error(`일시적 서버오류 HTTP ${r.status}`);
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    return {text:await r.text(),response:r};
+  }catch(e){
+    if(e?.name==='AbortError')throw new Error(`일시적 서버지연 TIMEOUT ${timeoutMs}ms`);
+    throw e;
+  }finally{
+    clearTimeout(timer);
+  }
 }
 const parseDoc=html=>new DOMParser().parseFromString(html,'text/html');
 
@@ -2758,6 +3066,7 @@ function availablePeople(form){
 }
 
 async function directHoldToPayment(cfg, slotUrl){
+  window.__EP_DIAG__?.mark('SLOT','DOOM 목표 슬롯 감지');
   status('🎯 슬롯 감지 → STEP2 데이터만 DIRECT 조회');
   const {text}=await getText(slotUrl);
   const doc=parseDoc(text);
@@ -2823,39 +3132,105 @@ async function directHoldToPayment(cfg, slotUrl){
     `STEP2 화면 로딩 없이 예약정보 POST를 즉시 전송합니다.\n`+
     `이후 결제는 사이트 정상 흐름으로 진행됩니다.`
   );
+  window.__EP_DIAG__?.mark('HOLD','DOOM rev.act.php 선점 form 제출 직전');
+  window.__EP_DIAG__?.flush();
   status('⚡ rev.act.php DIRECT 선점 POST → 결제 페이지 이동');
   post.submit();
 }
 
 async function poll(cfg){
-  const start=serverNow();let n=0;status('오픈 도달 → 목표 슬롯 확인 시작');
-  while(!stopped&&load().armed){
-    n++;const t=performance.now();
+  const openMs=new Date(cfg.openAt).getTime();
+  window.__EP_DIAG__?.setOpenMs(openMs);
+  let n=0, serverErrors=0, holding=false;
+  status('DOOM RESILIENT · 오픈 300ms 전 → 목표 슬롯 순차 확인 시작');
+
+  while(!stopped&&load().armed&&!holding){
+    n++;
+    const cycleStart=performance.now();
+    const relBefore=Number.isFinite(openMs)?serverNow()-openMs:0;
+
+    // 서버가 밀릴 때 한 요청이 몇 초씩 붙잡고 있으면 다음 기회를 잃으므로
+    // 오픈 직전/직후에는 짧은 GET 타임아웃을 사용한다. GET 확인 요청만 중단하며
+    // 예약 선점 POST에는 이 타임아웃을 적용하지 않는다.
+    const requestTimeout =
+      relBefore <= 1200 ? 1200 :
+      relBefore <= 5000 ? 1800 : 3000;
+
+    let extraBackoff=0;
+
     try{
-      const {text}=await getText(reservationUrl(cfg)+`&_p=${Date.now()}_${n}`),s=findSlot(text,cfg.theme,cfg.targetTime,cfg.targetDate);
-      if(s.ready&&s.href){
-        const u=new URL(s.href,location.href).href;
+      const {text}=await getText(
+        reservationUrl(cfg)+`&_p=${Date.now()}_${n}`,
+        requestTimeout
+      );
+      serverErrors=0;
+
+      const slot=findSlot(text,cfg.theme,cfg.targetTime,cfg.targetDate);
+      if(slot.ready&&slot.href){
+        holding=true; // 같은 세션에서 중복 선점 절대 금지
+        save({phase:'slot_found'});
+        const u=new URL(slot.href,location.href).href;
+        status(`🎯 목표 슬롯 감지 · ${cfg.targetTime}\n즉시 DIRECT 선점`);
         await directHoldToPayment(cfg,u);
-        return
+        return;
       }
-      if(n===1||n%10===0)status(`슬롯 확인 ${n}회\n${s.state}`)
+
+      if(n===1||n%8===0){
+        const rel=Number.isFinite(openMs)?serverNow()-openMs:0;
+        status(`DOOM 슬롯 확인 ${n}회 · ${rel>=0?'+':''}${Math.round(rel)}ms\n${slot.state}`)
+      }
     }catch(e){
-      const m=String(e?.message||e);if(/403|429|요청 제한/.test(m)){save({armed:false});throw e}
-      if(n===1||n%8===0)status(`확인 ${n}회 · ${m}`)
+      const m=String(e?.message||e);
+
+      // 접근/요청 제한은 더 밀어붙이지 않는다.
+      if(/403|429|요청 제한|rate.?limit/i.test(m)){
+        save({armed:false,phase:''});
+        throw e;
+      }
+
+      // 둠 서버가 순간적으로 5xx/timeout이면 세션을 버리지 않고
+      // 짧게 쉬었다가 같은 예약페이지에서 복구한다.
+      if(/HTTP 50[0234]|서버오류|TIMEOUT|서버지연/i.test(m)){
+        serverErrors++;
+        const rel=Number.isFinite(openMs)?serverNow()-openMs:0;
+        extraBackoff =
+          rel <= 1000 ? Math.min(180, 80 + serverErrors*20) :
+          rel <= 5000 ? Math.min(320, 140 + serverErrors*30) :
+          Math.min(700, 250 + serverErrors*60);
+
+        if(serverErrors===1||serverErrors%3===0){
+          status(`⚠️ 둠 서버 지연/오류 ${serverErrors}회\n${m}\n세션 유지 · ${extraBackoff}ms 후 복구 확인`);
+        }
+      }else if(n===1||n%8===0){
+        status(`확인 ${n}회 · ${m}`)
+      }
     }
-    const el=serverNow()-start,gap=el<3000?180:el<10000?350:700,used=performance.now()-t;if(used<gap)await sleep(gap-used)
+
+    const rel=Number.isFinite(openMs)?serverNow()-openMs:0;
+    const baseGap=rel<=900?80:rel<=3000?180:450;
+    const targetGap=Math.max(baseGap,extraBackoff);
+    const used=performance.now()-cycleStart;
+    if(used<targetGap)await sleep(targetGap-used);
   }
 }
 async function waitOpen(cfg){
   stopped=false;save({armed:true,phase:'waiting'});await calibrate(5);
-  const target=new Date(cfg.openAt).getTime();if(!Number.isFinite(target))throw new Error('오픈 시각을 확인해주세요.');
+  const target=new Date(cfg.openAt).getTime();window.__EP_DIAG__?.setOpenMs(target);if(!Number.isFinite(target))throw new Error('오픈 시각을 확인해주세요.');
   let a=false,b=false,w=false;
   const tick=async()=>{
     if(stopped||!load().armed)return;let rem=target-serverNow();
     if(!a&&rem<=9000&&rem>4500){a=true;await calibrate(7,true);rem=target-serverNow()}
-    if(!w&&rem<=6000&&rem>2500){w=true;fetch(reservationUrl(cfg)+'&_warm='+Date.now(),{credentials:'include',cache:'no-store'}).catch(()=>{})}
+    if(!w&&rem<=6000&&rem>2500){
+      // 사전 연결 1회만 순차 수행. 백그라운드 중복 요청을 남기지 않는다.
+      w=true;
+      try{await getText(reservationUrl(cfg)+'&_warm='+Date.now(),2200)}catch(e){
+        const m=String(e?.message||e);
+        if(/403|429|요청 제한|rate.?limit/i.test(m)){save({armed:false,phase:''});banner('err','예약 시도 중단',m);return}
+      }
+      rem=target-serverNow()
+    }
     if(!b&&rem<=3500&&rem>700){b=true;await calibrate(5,true);rem=target-serverNow()}
-    if(rem<=0){try{await poll(cfg)}catch(e){save({armed:false,phase:''});banner('err','예약 시도 중단',String(e?.message||e))}return}
+    if(rem<=300){try{await poll(cfg)}catch(e){save({armed:false,phase:''});banner('err','예약 시도 중단',String(e?.message||e))}return}
     status(`서버시간 기준 대기\n오픈까지 ${(rem/1000).toFixed(rem<3000?3:1)}초\n보정 ${offsetMs>=0?'+':''}${offsetMs}ms`);
     setTimeout(tick,rem<3000?5:rem<10000?100:650)
   };tick()
@@ -3003,12 +3378,12 @@ if (/(^|\.)play33\.kr$/i.test(location.hostname)) {
   // ULTRA FAST 네트워크 튜닝
   const PREWARM_BEFORE_MS = 10000;       // 10초 전 첫 연결 예열
   const SECOND_PREWARM_BEFORE_MS = 3000; // 3초 전 한 번 더 예열
-  const BURST_START_BEFORE_MS = 2000;    // 2초 전부터 초고속 확인
-  const BURST_END_AFTER_MS = 3000;       // 오픈 후 3초까지
-  const BURST_CYCLE_MS = 50;             // 목표 주기 (실제 요청 시간이 더 길면 추가 대기 없음)
-  const FAST_END_AFTER_MS = 10000;       // 오픈 후 10초까지
-  const FAST_CYCLE_MS = 120;
-  const NORMAL_CYCLE_MS = 300;
+  const BURST_START_BEFORE_MS = 300;     // 300ms 전부터 선행 확인
+  const BURST_END_AFTER_MS = 900;        // 오픈 후 0.9초까지 80ms
+  const BURST_CYCLE_MS = 80;             // 목표 주기 (순차 요청)
+  const FAST_END_AFTER_MS = 3000;        // 오픈 후 3초까지
+  const FAST_CYCLE_MS = 180;
+  const NORMAL_CYCLE_MS = 450;
   const STATUS_EVERY_ATTEMPTS = 20;      // 화면 갱신 부담 최소화
 
   const DEFAULTS = {
@@ -3331,6 +3706,7 @@ if (/(^|\.)play33\.kr$/i.test(location.hostname)) {
   }
 
   function setStatus(text) {
+    window.__EP_DIAG__?.state(text);
     const el = $('#p33-status');
     if (el) el.textContent = text;
   }
@@ -3353,6 +3729,8 @@ if (/(^|\.)play33\.kr$/i.test(location.hostname)) {
     setStatus(`ULTRA FAST 준비 · 서버 시각 보정 ${offsetSec >= 0 ? '+' : ''}${offsetSec.toFixed(2)}초`);
 
     const openMs = parseOpenMoment(cfg.date, cfg.rangeDay, cfg.openTime);
+
+    window.__EP_DIAG__?.setOpenMs(openMs);
     const prewarmMs = openMs - PREWARM_BEFORE_MS;
     const secondPrewarmMs = openMs - SECOND_PREWARM_BEFORE_MS;
     const burstStartMs = openMs - BURST_START_BEFORE_MS;
@@ -3828,6 +4206,7 @@ if (/(^|\.)dpsnnn\.com$/i.test(location.hostname)) {
   }
 
   function status(msg) {
+    window.__EP_DIAG__?.state(msg);
     const el = document.getElementById('dps-fast-status');
     if (el) el.textContent = msg;
   }
@@ -4236,6 +4615,8 @@ if (/(^|\.)dpsnnn\.com$/i.test(location.hostname)) {
     if (!location.pathname.startsWith('/reserve_g')) return;
 
     const openMs = calcOpenMoment(cfg.targetDate);
+
+    window.__EP_DIAG__?.setOpenMs(openMs);
     if (!Number.isFinite(openMs)) return;
 
     if (serverNowMs() < openMs) {
@@ -4253,7 +4634,9 @@ if (/(^|\.)dpsnnn\.com$/i.test(location.hostname)) {
     const count = (cfg.reloadCount || 0) + 1;
     saveCfg({phase:'armed', reloadCount:count, lastAction:'정상 예약 페이지 새로고침'});
     status(`아직 슬롯 미감지 → 정상 페이지 새로고침 (${count})`);
-    await sleep(count < 8 ? 120 : 350);
+    const rel = serverNowMs() - openMs;
+    const gap = rel <= 900 ? 80 : rel <= 3000 ? 180 : 450;
+    await sleep(gap);
     location.reload();
   }
 
@@ -4435,6 +4818,7 @@ if (/(^|\.)dpsnnn\.com$/i.test(location.hostname)) {
       const v = collectPanel();
       if (!v) return;
       const openMs = calcOpenMoment(v.targetDate);
+      window.__EP_DIAG__?.setOpenMs(openMs);
       saveCfg({...v, armed:true, phase:'armed', reloadCount:0, lastAction:'예약 대기 시작'});
 
       const localRemain = openMs - Date.now();
@@ -4531,10 +4915,12 @@ if (/(^|\.)ledasquare\.com$/i.test(location.hostname)) {
 
   // Python V2와 동일한 타이밍 계열 설정
   const PREWARM_BEFORE_SECONDS = 5.0;
-  const FAST_START_BEFORE_SECONDS = 2.5;
-  const FAST_CYCLE_MS = 150;
-  const NORMAL_CYCLE_MS = 500;
-  const FAST_WINDOW_AFTER_OPEN_SECONDS = 8.0;
+  const FAST_START_BEFORE_SECONDS = 0.3;
+  const FAST_CYCLE_MS = 80;
+  const WARM_CYCLE_MS = 180;
+  const NORMAL_CYCLE_MS = 450;
+  const FAST_WINDOW_AFTER_OPEN_SECONDS = 0.9;
+  const WARM_WINDOW_AFTER_OPEN_SECONDS = 3.0;
 
   const STORAGE_KEY = 'leda_fast_booker_ios_v1';
 
@@ -4887,6 +5273,7 @@ if (/(^|\.)ledasquare\.com$/i.test(location.hostname)) {
   }
 
   function addLog(message, kind = '') {
+    if (/^\[(?:오픈감지|전송|응답|성공|실패|확인필요|오류|중지|재시도|시계|예열|대기|예약시작)\]/.test(String(message||''))) window.__EP_DIAG__?.state(message);
     const box = qs('#leda-log');
     const line = `[${fmtClock()}] ${message}`;
     console.log('[LEDA]', line);
@@ -4974,13 +5361,27 @@ if (/(^|\.)ledasquare\.com$/i.test(location.hostname)) {
           addLog(`[확인] ${cfg.time} ${info.found ? '막힘' : '미표시'} / ${attempt}회`);
         }
 
-        const fastUntil = openingTimeToday().getTime() + FAST_WINDOW_AFTER_OPEN_SECONDS * 1000;
-        const targetCycle = serverNow().getTime() <= fastUntil ? FAST_CYCLE_MS : NORMAL_CYCLE_MS;
+        const openMs = openingTimeToday().getTime();
+
+        window.__EP_DIAG__?.setOpenMs(openMs);
+        const rel = serverNow().getTime() - openMs;
+        const targetCycle = rel <= FAST_WINDOW_AFTER_OPEN_SECONDS * 1000
+          ? FAST_CYCLE_MS
+          : rel <= WARM_WINDOW_AFTER_OPEN_SECONDS * 1000
+            ? WARM_CYCLE_MS
+            : NORMAL_CYCLE_MS;
         const remain = targetCycle - elapsed;
         if (remain > 0) await sleep(remain);
       } catch (e) {
-        if (attempt === 1 || attempt % 5 === 0) addLog(`[재시도] ${e.message}`);
-        await sleep(100);
+        const msg=String(e?.message||e);
+        if (/403|429|요청 제한|rate.?limit/i.test(msg)) {
+          cancelled=true;
+          addLog(`[중지] 서버 요청 제한 감지 · ${msg}`,'err');
+          throw e;
+        }
+        if (attempt === 1 || attempt % 5 === 0) addLog(`[재시도] ${msg}`);
+        const rel=serverNow().getTime()-openingTimeToday().getTime();
+        await sleep(rel<=900?80:rel<=3000?180:450);
       }
     }
     throw new Error('사용자가 중지했습니다.');
@@ -5388,6 +5789,7 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
   }
 
   function status(msg) {
+    window.__EP_DIAG__?.state(msg);
     const el = $('#__oasis_status');
     if (el) el.textContent = msg;
   }
@@ -5644,82 +6046,63 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
     else form.submit();
   }
 
-  async function detectAndReserve(cfg) {
+  async function detectAndReserve(cfg, openMs) {
     const btn = validateCfg(cfg);
     const scheduleId = String(btn.value);
-    const started = serverNowMs();
-
-    let won = false;
-    let stoppedByLimit = false;
-    let totalAttempts = 0;
+    let attempt = 0;
 
     status(
       `⚡ FAST OPEN 시작\n` +
       `${cfg.targetTime} · schedule ID ${scheduleId}\n` +
-      `최대 2개 순차 워커`
+      `동시 요청 없음 · 순차 확인`
     );
 
-    async function worker(name, initialDelay) {
-      if (initialDelay > 0) await sleep(initialDelay);
-      let localAttempts = 0;
+    while (running && !stopRequested) {
+      attempt++;
+      const cycle = performance.now();
 
-      while (running && !stopRequested && !won && !stoppedByLimit) {
-        localAttempts++;
-        totalAttempts++;
-        const t0 = performance.now();
+      try {
+        const closed = await getClosedScheduleIds(cfg);
+        const rtt = Math.round(performance.now() - cycle);
 
-        try {
-          const closed = await getClosedScheduleIds(cfg);
-          const rtt = Math.round(performance.now() - t0);
+        if (!running || stopRequested) return;
 
-          if (won || stopRequested || stoppedByLimit || !running) return;
-
-          if (!closed.includes(scheduleId)) {
-            won = true;
-            running = false;
-            status(
-              `🎯 ${cfg.targetTime} 오픈 감지\n` +
-              `${name} · ${rtt}ms → 예약정보 제출`
-            );
-            await enterStep2AndMaybeSubmit(cfg, btn);
-            return;
-          }
-
-          if (localAttempts === 1 || localAttempts % 5 === 0) {
-            status(
-              `FAST OPEN 조회 ${totalAttempts}회\n` +
-              `${name} 최근 ${rtt}ms · 아직 미오픈/마감`
-            );
-          }
-        } catch (e) {
-          const msg = String(e?.message || e);
-
-          if (/403|429|요청 제한/.test(msg)) {
-            stoppedByLimit = true;
-            running = false;
-            stopRequested = true;
-            status(`❌ ${msg}\n서버 제한 감지 → 자동 중단`);
-            setBadge('❌ OASIS 요청제한', false);
-            return;
-          }
-
-          if (localAttempts === 1 || localAttempts % 4 === 0) {
-            status(`FAST OPEN ${name} · ${msg}`);
-          }
+        if (!closed.includes(scheduleId)) {
+          running = false;
+          status(
+            `🎯 ${cfg.targetTime} 오픈 감지\n` +
+            `${rtt}ms → 예약정보 제출`
+          );
+          await enterStep2AndMaybeSubmit(cfg, btn);
+          return;
         }
 
-        if (won || stopRequested || stoppedByLimit || !running) return;
-
-        const elapsed = serverNowMs() - started;
-        const gap = elapsed < 3000 ? 180 : elapsed < 8000 ? 320 : elapsed < 15000 ? 550 : 900;
-        await sleep(gap);
+        if (attempt === 1 || attempt % 10 === 0) {
+          const rel = serverNowMs() - openMs;
+          status(
+            `FAST OPEN 조회 ${attempt}회 · ${rel >= 0 ? '+' : ''}${Math.round(rel)}ms\n` +
+            `최근 ${rtt}ms · 아직 미오픈/마감`
+          );
+        }
+      } catch (e) {
+        const msg = String(e?.message || e);
+        if (/403|429|요청 제한|rate.?limit/i.test(msg)) {
+          running = false;
+          stopRequested = true;
+          status(`❌ ${msg}\n서버 제한 감지 → 자동 중단`);
+          setBadge('❌ OASIS 요청제한', false);
+          return;
+        }
+        if (attempt === 1 || attempt % 8 === 0) status(`FAST OPEN · ${msg}`);
       }
-    }
 
-    await Promise.all([
-      worker('A', 0),
-      worker('B', 420)
-    ]);
+      if (!running || stopRequested) return;
+
+      const rel = serverNowMs() - openMs;
+      const gap = rel <= 900 ? 80 : rel <= 3000 ? 180 : 450;
+      const used = performance.now() - cycle;
+      if (used < gap) await sleep(gap - used);
+    }
   }
 
   async function start(cfg) {
@@ -5733,6 +6116,8 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
     await calibrateClock(5);
 
     const openMs = computedOpenMs(cfg.targetDate);
+
+    window.__EP_DIAG__?.setOpenMs(openMs);
     let synced8 = false;
     let synced2 = false;
     let warmed15 = false;
@@ -5743,7 +6128,7 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
       const now = serverNowMs();
       const remain = openMs - now;
 
-      if (remain <= 0) break;
+      if (remain <= 300) break;
 
       if (!warmed15 && remain <= 15000) {
         warmed15 = true;
@@ -5790,6 +6175,7 @@ if (/(^|\.)oasismuseum\.com$/i.test(location.hostname)) {
     const btn = validateCfg(cfg);
     await calibrateClock(3);
     const openMs = computedOpenMs(cfg.targetDate);
+    window.__EP_DIAG__?.setOpenMs(openMs);
 
     if (serverNowMs() < openMs) {
       status(
